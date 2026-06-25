@@ -1,0 +1,36 @@
+import { api, clearTokens, getRefreshToken, setTokens, unwrap } from './api';
+import { AuthResult, Role, User } from '@/types';
+export type RegisterPayload = { fullName: string; email: string; phone?: string; password: string; role: Exclude<Role, 'ADMIN'> };
+export type LoginPayload = { email: string; password: string };
+export const authService = {
+  async register(payload: RegisterPayload) {
+    const data = unwrap<AuthResult>(await api.post('/auth/register', payload));
+    await clearTokens();
+    return data;
+  },
+  async login(payload: LoginPayload) {
+    console.log('LOGIN PAYLOAD:', payload);
+    const res = await api.post('/auth/login', payload);
+    console.log('LOGIN RESPONSE:', res.data);
+
+    const data = unwrap<AuthResult>(res);
+    await setTokens(data.accessToken, data.refreshToken);
+    return data;
+  },  
+  async logout() { await api.post('/auth/logout').catch(() => undefined); await clearTokens(); },
+  async refresh() {
+    const refreshToken = await getRefreshToken();
+    if (!refreshToken) throw new Error('No refresh token');
+    try {
+      const data = unwrap<AuthResult>(await api.post('/auth/refresh', { refreshToken }));
+      await setTokens(data.accessToken, data.refreshToken);
+      return data;
+    } catch (err) {
+      await clearTokens();
+      throw err;
+    }
+  },
+  forgotPassword(email: string) { return api.post('/auth/forgot-password', { email }).then(r => r.data); },
+  resetPassword(token: string, newPassword: string) { return api.post('/auth/reset-password', { token, newPassword }).then(r => r.data); },
+  profile() { return api.get('/users/profile').then(unwrap<User>); },
+};

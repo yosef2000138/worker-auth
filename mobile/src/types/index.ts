@@ -1,0 +1,16 @@
+export type Role = 'CUSTOMER' | 'WORKER' | 'ADMIN';
+export type RequestStatus = 'PENDING' | 'ACCEPTED' | 'ON_THE_WAY' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+export type PaymentMethod = 'ONLINE' | 'CASH';
+export type ApiEnvelope<T> = { success: boolean; data: T; message?: string };
+export type Paginated<T> = { items?: T[]; data?: T[]; total?: number; page?: number; limit?: number; pages?: number } | T[];
+export type User = { id: string; fullName: string; email: string; phone?: string | null; avatarUrl?: string | null; role: Role; isEmailVerified?: boolean };
+export type AuthResult = { user: User; accessToken: string; refreshToken: string };
+export type Category = { id: string; name: string; icon?: string | null; description?: string | null; isActive?: boolean };
+export type AvailabilitySlot = { id?: string; dayOfWeek: number; startTime: string; endTime: string };
+export type WorkerProfile = { id: string; userId?: string; user?: User; bio?: string | null; yearsExp?: number; hourlyRate?: number | string | null; fixedPrice?: number | string | null; workingRadius?: number; ratingAvg?: number; ratingCount?: number; totalReviews?: number; totalJobs?: number; isAvailable?: boolean; availability?: AvailabilitySlot[]; categories?: (Category | { category: Category })[] };
+export type ServiceRequest = { id: string; customerId?: string; workerId?: string | null; categoryId?: string; category?: Category; title: string; description: string; lat?: number; lng?: number; address?: string; scheduledAt?: string | null; status: RequestStatus; paymentMethod?: PaymentMethod; images?: string[]; createdAt?: string; worker?: WorkerProfile; customer?: User };
+export type Message = { id: string; requestId: string; senderId: string; content: string; readAt?: string | null; createdAt: string; sender?: User };
+export type NotificationItem = { id: string; title?: string; body?: string; message?: string; isRead?: boolean; createdAt?: string };
+export type Review = { id: string; requestId?: string; workerId?: string; rating: number; comment?: string | null; createdAt?: string; customer?: User; reviewer?: User };
+export type Payment = { id: string; requestId: string; amount: number | string; status?: string; method?: PaymentMethod; createdAt?: string };
+export type RootStackParamList = { Splash: undefined; Onboarding: undefined; Login: undefined; Register: undefined; ForgotPassword: undefined; CustomerHome: undefined; Categories: undefined; CreateRequest: { categoryId?: string } | undefined; WorkerSearch: { categoryId?: string } | undefined; WorkerProfile: { workerId: string }; RequestDetails: { requestId: string }; Chat: { requestId: string }; Notifications: undefined; Favorites: undefined; Profile: undefined; WorkerDashboard: undefined; IncomingRequests: undefined; ActiveJob: { requestId?: string } | undefined; Earnings: undefined; Reviews: undefined; Availability: undefined; WorkerOwnProfile: undefined };
