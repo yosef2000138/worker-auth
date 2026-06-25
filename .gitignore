@@ -1,0 +1,10 @@
+node_modules/
+backend/node_modules/
+mobile/node_modules/
+.env
+backend/.env
+mobile/.env.local
+dist/
+backend/dist/
+.expo/
+.DS_Store
