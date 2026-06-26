@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: worker-auth
+    runtime: docker
+    rootDir: backend
+    healthCheckPath: /health
+    preDeployCommand: npx prisma migrate deploy
