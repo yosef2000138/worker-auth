@@ -9,10 +9,7 @@ export const authService = {
     return data;
   },
   async login(payload: LoginPayload) {
-    console.log('LOGIN PAYLOAD:', payload);
     const res = await api.post('/auth/login', payload);
-    console.log('LOGIN RESPONSE:', res.data);
-
     const data = unwrap<AuthResult>(res);
     await setTokens(data.accessToken, data.refreshToken);
     return data;

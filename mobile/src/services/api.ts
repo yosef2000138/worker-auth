@@ -1,30 +1,20 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
 
-export const API_HOSTS = {
-  ios: 'http://localhost:3000/api/v1',
-  android: 'http://10.0.2.2:3000/api/v1',
-  device: 'http://192.168.10.237:3000/api/v1',
-} as const;
+const DEFAULT_API_URL = 'https://worker-auth.onrender.com/api/v1';
+const DEFAULT_SOCKET_URL = 'https://worker-auth.onrender.com';
 
-export const SOCKET_HOSTS = {
-  ios: 'http://localhost:3000',
-  android: 'http://10.0.2.2:3000',
-  device: 'http://192.168.10.237:3000',
-} as const;
+const normalizeUrl = (value: string | undefined, fallback: string) => {
+  return (value?.trim() || fallback).replace(/\/+$/, '');
+};
 
-type Target = keyof typeof API_HOSTS;
-export const API_TARGET = 'ios' as Target; // use 'ios' for simulator, 'android' for emulator, 'device' for real phone
-const fallbackApiUrl = API_TARGET === 'ios' && Platform.OS === 'android' ? API_HOSTS.android : API_HOSTS[API_TARGET];
-const fallbackSocketUrl = API_TARGET === 'ios' && Platform.OS === 'android' ? SOCKET_HOSTS.android : SOCKET_HOSTS[API_TARGET];
-export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? fallbackApiUrl;
-export const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL ?? fallbackSocketUrl;
+export const API_URL = normalizeUrl(process.env.EXPO_PUBLIC_API_URL, DEFAULT_API_URL);
+export const SOCKET_URL = normalizeUrl(process.env.EXPO_PUBLIC_SOCKET_URL, DEFAULT_SOCKET_URL);
 
 export const ACCESS_TOKEN_KEY = 'worker_app_access_token';
 export const REFRESH_TOKEN_KEY = 'worker_app_refresh_token';
 
-export const api = axios.create({ baseURL: API_URL, timeout: 15000, headers: { Accept: 'application/json' } });
+export const api = axios.create({ baseURL: API_URL, timeout: 30000, headers: { Accept: 'application/json' } });
 
 api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   const token = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
