@@ -32,6 +32,27 @@ const workerSelect = {
   },
 } satisfies Prisma.WorkerSelect;
 
+async function ensureWorkerProfile(userId: string) {
+  const existing = await db.worker.findUnique({
+    where: { userId },
+    select: workerSelect,
+  });
+  if (existing) return existing;
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+  if (!user || user.role !== 'WORKER') {
+    throw { status: 404, message: 'Worker profile not found' };
+  }
+
+  return db.worker.create({
+    data: { userId },
+    select: workerSelect,
+  });
+}
+
 // ─── Search / list workers ────────────────────────────────────────────────────
 export async function searchWorkers(query: {
   categoryId?: string;
@@ -96,18 +117,12 @@ export async function getWorker(id: string) {
 
 // ─── Get own worker profile ───────────────────────────────────────────────────
 export async function getMyWorkerProfile(userId: string) {
-  const worker = await db.worker.findUnique({
-    where: { userId },
-    select: workerSelect,
-  });
-  if (!worker) throw { status: 404, message: 'Worker profile not found' };
-  return worker;
+  return ensureWorkerProfile(userId);
 }
 
 // ─── Update own worker profile ────────────────────────────────────────────────
 export async function updateWorkerProfile(userId: string, input: UpdateWorkerProfileInput) {
-  const worker = await db.worker.findUnique({ where: { userId } });
-  if (!worker) throw { status: 404, message: 'Worker profile not found' };
+  await ensureWorkerProfile(userId);
 
   const updated = await db.worker.update({
     where: { userId },
@@ -126,8 +141,7 @@ export async function updateWorkerProfile(userId: string, input: UpdateWorkerPro
 
 // ─── Set categories ───────────────────────────────────────────────────────────
 export async function setCategories(userId: string, input: SetCategoriesInput) {
-  const worker = await db.worker.findUnique({ where: { userId } });
-  if (!worker) throw { status: 404, message: 'Worker profile not found' };
+  const worker = await ensureWorkerProfile(userId);
 
   // Verify all categories exist
   const cats = await db.serviceCategory.findMany({
@@ -153,8 +167,7 @@ export async function setCategories(userId: string, input: SetCategoriesInput) {
 
 // ─── Set availability ─────────────────────────────────────────────────────────
 export async function setAvailability(userId: string, input: SetAvailabilityInput) {
-  const worker = await db.worker.findUnique({ where: { userId } });
-  if (!worker) throw { status: 404, message: 'Worker profile not found' };
+  const worker = await ensureWorkerProfile(userId);
 
   await db.$transaction([
     db.workerAvailability.deleteMany({ where: { workerId: worker.id } }),
@@ -179,8 +192,7 @@ export async function setAvailability(userId: string, input: SetAvailabilityInpu
 
 // ─── Toggle availability status ───────────────────────────────────────────────
 export async function toggleAvailability(userId: string, isAvailable: boolean) {
-  const worker = await db.worker.findUnique({ where: { userId } });
-  if (!worker) throw { status: 404, message: 'Worker profile not found' };
+  await ensureWorkerProfile(userId);
 
   const updated = await db.worker.update({
     where: { userId },
@@ -193,8 +205,7 @@ export async function toggleAvailability(userId: string, isAvailable: boolean) {
 
 // ─── Worker earnings summary ──────────────────────────────────────────────────
 export async function getEarnings(userId: string) {
-  const worker = await db.worker.findUnique({ where: { userId } });
-  if (!worker) throw { status: 404, message: 'Worker profile not found' };
+  const worker = await ensureWorkerProfile(userId);
 
   const payments = await db.payment.findMany({
     where: {

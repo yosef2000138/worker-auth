@@ -8,20 +8,52 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://worker-auth.onrender.com/api/v1",
-        "EXPO_PUBLIC_SOCKET_URL": "https://worker-auth.onrender.com"
+        "EXPO_PUBLIC_SOCKET_URL": "https://worker-auth.onrender.com",
+        "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID": "worker_pro",
+        "EXPO_PUBLIC_REVENUECAT_OFFERING_ID": "default",
+        "EXPO_PUBLIC_GOOGLE_WORKER_PRO_PRODUCT_ID": "worker_pro_monthly",
+        "EXPO_PUBLIC_APPLE_WORKER_PRO_PRODUCT_ID": "com.workerapp.workerpro.monthly"
+      }
+    },
+    "preview-simulator": {
+      "distribution": "internal",
+      "developmentClient": false,
+      "environment": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://worker-auth.onrender.com/api/v1",
+        "EXPO_PUBLIC_SOCKET_URL": "https://worker-auth.onrender.com",
+        "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID": "worker_pro",
+        "EXPO_PUBLIC_REVENUECAT_OFFERING_ID": "default",
+        "EXPO_PUBLIC_GOOGLE_WORKER_PRO_PRODUCT_ID": "worker_pro_monthly",
+        "EXPO_PUBLIC_APPLE_WORKER_PRO_PRODUCT_ID": "com.workerapp.workerpro.monthly"
+      },
+      "ios": {
+        "simulator": true
       }
     },
     "preview": {
       "distribution": "internal",
+      "developmentClient": false,
+      "environment": "preview",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://worker-auth.onrender.com/api/v1",
-        "EXPO_PUBLIC_SOCKET_URL": "https://worker-auth.onrender.com"
+        "EXPO_PUBLIC_SOCKET_URL": "https://worker-auth.onrender.com",
+        "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID": "worker_pro",
+        "EXPO_PUBLIC_REVENUECAT_OFFERING_ID": "default",
+        "EXPO_PUBLIC_GOOGLE_WORKER_PRO_PRODUCT_ID": "worker_pro_monthly",
+        "EXPO_PUBLIC_APPLE_WORKER_PRO_PRODUCT_ID": "com.workerapp.workerpro.monthly"
       }
     },
     "production": {
+      "developmentClient": false,
+      "environment": "production",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://worker-auth.onrender.com/api/v1",
-        "EXPO_PUBLIC_SOCKET_URL": "https://worker-auth.onrender.com"
+        "EXPO_PUBLIC_SOCKET_URL": "https://worker-auth.onrender.com",
+        "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID": "worker_pro",
+        "EXPO_PUBLIC_REVENUECAT_OFFERING_ID": "default",
+        "EXPO_PUBLIC_GOOGLE_WORKER_PRO_PRODUCT_ID": "worker_pro_monthly",
+        "EXPO_PUBLIC_APPLE_WORKER_PRO_PRODUCT_ID": "com.workerapp.workerpro.monthly"
       }
     }
   }

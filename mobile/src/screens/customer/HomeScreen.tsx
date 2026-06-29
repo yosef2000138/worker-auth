@@ -6,9 +6,10 @@ import { RootStackParamList } from '@/types';
 import { requestService } from '@/services/requestService';
 import { Body, BodySm, Button, Card, EmptyState, H2, Row, Screen, Stack, StatusBadge } from '@/components/ui';
 import { colors, spacing } from '@/theme';
-import { formatDate } from '@/utils/formatters';
+import { formatAppDate, getLocalizedCategoryName, useLanguage } from '@/i18n';
 type Props = NativeStackScreenProps<RootStackParamList, 'CustomerHome'>;
 export default function HomeScreen({ navigation }: Props) {
+  const { t, locale, language } = useLanguage();
   const { data } = useQuery({ queryKey: ['requests'], queryFn: () => requestService.list({ limit: 5 }) });
   const items = Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
 
@@ -16,22 +17,23 @@ export default function HomeScreen({ navigation }: Props) {
     <Screen padded={false}>
       <View style={styles.header}>
         <Stack gap={spacing.xs}>
-          <H2>Customer home</H2>
-          <BodySm color={colors.textSecondary}>Create requests, find workers, and track jobs.</BodySm>
+          <H2>{t('customer.home.title')}</H2>
+          <BodySm color={colors.textSecondary}>{t('customer.home.subtitle')}</BodySm>
         </Stack>
-        <Row gap={spacing.sm}>
-          <Button title="Create" fullWidth={false} style={{ flex: 1 }} onPress={() => navigation.navigate('CreateRequest')} />
-          <Button title="Workers" fullWidth={false} variant="outline" style={{ flex: 1 }} onPress={() => navigation.navigate('WorkerSearch')} />
+        <Row gap={spacing.sm} wrap>
+          <Button title={t('customer.home.create')} fullWidth={false} style={styles.quickAction} onPress={() => navigation.navigate('CreateRequest')} />
+          <Button title={t('customer.home.workers')} fullWidth={false} variant="outline" style={styles.quickAction} onPress={() => navigation.navigate('WorkerSearch')} />
+          <Button title={t('common.map')} fullWidth={false} variant="outline" style={styles.quickAction} onPress={() => navigation.navigate('Map')} />
         </Row>
-        <Button title="Notifications" variant="ghost" onPress={() => navigation.navigate('Notifications')} />
+        <Button title={t('nav.notifications')} variant="ghost" onPress={() => navigation.navigate('Notifications')} />
       </View>
 
       {items.length === 0 ? (
         <EmptyState
           icon="clipboard-outline"
-          title="No requests yet"
-          message="Create your first service request when you are ready."
-          actionLabel="Browse categories"
+          title={t('customer.home.noRequestsTitle')}
+          message={t('customer.home.noRequestsMessage')}
+          actionLabel={t('customer.home.browseCategories')}
           onAction={() => navigation.navigate('Categories')}
         />
       ) : (
@@ -46,8 +48,8 @@ export default function HomeScreen({ navigation }: Props) {
                 <Row justify="space-between" align="flex-start">
                   <Stack gap={spacing.xs} style={{ flex: 1 }}>
                     <Body weight="bold">{item.title}</Body>
-                    {item.category?.name ? <BodySm color={colors.textSecondary}>{item.category.name}</BodySm> : null}
-                    {item.createdAt ? <BodySm color={colors.textTertiary}>{formatDate(item.createdAt)}</BodySm> : null}
+                    {item.category ? <BodySm color={colors.textSecondary}>{getLocalizedCategoryName(item.category, language.code, t)}</BodySm> : null}
+                    {item.createdAt ? <BodySm color={colors.textTertiary}>{formatAppDate(item.createdAt, locale)}</BodySm> : null}
                   </Stack>
                   <StatusBadge status={item.status} />
                 </Row>
@@ -63,4 +65,5 @@ export default function HomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   header: { padding: spacing.lg, gap: spacing.md },
   list: { paddingHorizontal: spacing.lg, paddingBottom: spacing['4xl'] },
+  quickAction: { flexBasis: '31%', flexGrow: 1 },
 });

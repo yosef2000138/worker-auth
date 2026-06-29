@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { LanguageSelector } from '@/components/language/LanguageSelector';
 import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '@/i18n';
 import { userService } from '@/services/userService';
 import { useAuthStore } from '@/store/authStore';
 import {
@@ -9,8 +11,10 @@ import {
   H2, H3, Body, BodySm, Divider,
 } from '@/components/ui';
 import { colors, spacing } from '@/theme';
+import { localizedApiErrorMessage } from '@/utils/localizedErrors';
 
 export default function ProfileScreen() {
+  const { t } = useLanguage();
   const { user, logout } = useAuth();
   const setUser = useAuthStore(s => s.setUser);
   const queryClient = useQueryClient();
@@ -33,13 +37,18 @@ export default function ProfileScreen() {
   const [showPwd, setShowPwd] = useState(false);
   const changePwd = useMutation({
     mutationFn: () => userService.changePassword({ currentPassword: curPwd, newPassword: newPwd }),
-    onSuccess: () => { setCurPwd(''); setNewPwd(''); setShowPwd(false); Alert.alert('Password changed', 'Your password has been updated.'); },
+    onSuccess: () => {
+      setCurPwd('');
+      setNewPwd('');
+      setShowPwd(false);
+      Alert.alert(t('profile.passwordChanged'), t('profile.passwordChangedBody'));
+    },
   });
 
   const handleLogout = () => {
-    Alert.alert('Log out', 'Are you sure you want to log out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Log out', style: 'destructive', onPress: () => void logout() },
+    Alert.alert(t('profile.logoutConfirmTitle'), t('profile.logoutConfirmMessage'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('profile.logout'), style: 'destructive', onPress: () => void logout() },
     ]);
   };
 
@@ -50,28 +59,32 @@ export default function ProfileScreen() {
         <Avatar uri={user?.avatarUrl} name={user?.fullName} size={80} />
         <H2 style={{ marginTop: spacing.md, textAlign: 'center' }}>{user?.fullName}</H2>
         <BodySm color={colors.textSecondary}>{user?.email}</BodySm>
-        {user?.isEmailVerified === false ? <BodySm color={colors.danger} style={{ marginTop: 4 }}>Email not verified</BodySm> : null}
+        {user?.isEmailVerified === false ? <BodySm color={colors.danger} style={{ marginTop: 4 }}>{t('profile.emailNotVerified')}</BodySm> : null}
+      </Card>
+
+      <Card style={{ marginTop: spacing.md }}>
+        <LanguageSelector variant="row" />
       </Card>
 
       {/* Edit profile */}
       <Card style={{ marginTop: spacing.md }}>
         <Row justify="space-between" style={{ marginBottom: spacing.md }}>
-          <H3>Personal info</H3>
-          <Button title={editMode ? 'Cancel' : 'Edit'} variant="ghost" size="sm" fullWidth={false} onPress={() => { setEditMode(e => !e); setFullName(user?.fullName ?? ''); setPhone(user?.phone ?? ''); }} />
+          <H3>{t('profile.personalInfo')}</H3>
+          <Button title={editMode ? t('profile.cancel') : t('profile.edit')} variant="ghost" size="sm" fullWidth={false} onPress={() => { setEditMode(e => !e); setFullName(user?.fullName ?? ''); setPhone(user?.phone ?? ''); }} />
         </Row>
 
-        {updateProfile.isError ? <Banner tone="danger" message={updateProfile.error?.message ?? 'Could not save.'} /> : null}
-        {updateProfile.isSuccess ? <Banner tone="success" message="Profile updated!" /> : null}
+        {updateProfile.isError ? <Banner tone="danger" message={localizedApiErrorMessage(updateProfile.error, t, 'profile.couldNotSave')} /> : null}
+        {updateProfile.isSuccess ? <Banner tone="success" message={t('profile.updated')} /> : null}
 
         <Stack gap={spacing.md}>
-          <Field label="Full name" value={fullName} onChangeText={setFullName} editable={editMode} />
-          <Field label="Email" value={user?.email ?? ''} editable={false} />
-          <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" editable={editMode} />
+          <Field label={t('register.fullName')} value={fullName} onChangeText={setFullName} editable={editMode} />
+          <Field label={t('auth.email')} value={user?.email ?? ''} editable={false} />
+          <Field label={t('register.phone')} value={phone} onChangeText={setPhone} keyboardType="phone-pad" editable={editMode} />
         </Stack>
 
         {editMode ? (
           <Button
-            title="Save changes"
+            title={t('profile.saveChanges')}
             loading={updateProfile.isPending}
             style={{ marginTop: spacing.lg }}
             onPress={() => updateProfile.mutate()}
@@ -82,26 +95,26 @@ export default function ProfileScreen() {
       {/* Change password */}
       <Card style={{ marginTop: spacing.md }}>
         <Row justify="space-between" style={{ marginBottom: spacing.md }}>
-          <H3>Change password</H3>
-          <Button title={showPwd ? 'Cancel' : 'Change'} variant="ghost" size="sm" fullWidth={false} onPress={() => { setShowPwd(s => !s); setCurPwd(''); setNewPwd(''); }} />
+          <H3>{t('profile.changePassword')}</H3>
+          <Button title={showPwd ? t('profile.cancel') : t('profile.change')} variant="ghost" size="sm" fullWidth={false} onPress={() => { setShowPwd(s => !s); setCurPwd(''); setNewPwd(''); }} />
         </Row>
 
         {showPwd ? (
           <Stack gap={spacing.md}>
-            {changePwd.isError ? <Banner tone="danger" message={changePwd.error?.message ?? 'Could not change password.'} /> : null}
-            {changePwd.isSuccess ? <Banner tone="success" message="Password changed!" /> : null}
-            <Field label="Current password" value={curPwd} onChangeText={setCurPwd} secureTextEntry />
-            <Field label="New password" value={newPwd} onChangeText={setNewPwd} secureTextEntry helperText="8+ characters, one uppercase, one number" />
-            <Button title="Update password" loading={changePwd.isPending} onPress={() => changePwd.mutate()} />
+            {changePwd.isError ? <Banner tone="danger" message={localizedApiErrorMessage(changePwd.error, t, 'profile.changePasswordFailed')} /> : null}
+            {changePwd.isSuccess ? <Banner tone="success" message={t('profile.passwordChangedBanner')} /> : null}
+            <Field label={t('profile.currentPassword')} value={curPwd} onChangeText={setCurPwd} secureTextEntry />
+            <Field label={t('profile.newPassword')} value={newPwd} onChangeText={setNewPwd} secureTextEntry helperText={t('profile.passwordHelper')} />
+            <Button title={t('profile.updatePassword')} loading={changePwd.isPending} onPress={() => changePwd.mutate()} />
           </Stack>
         ) : (
-          <BodySm color={colors.textSecondary}>Tap Change to update your password.</BodySm>
+          <BodySm color={colors.textSecondary}>{t('profile.changePasswordHint')}</BodySm>
         )}
       </Card>
 
       {/* Logout */}
       <Card style={{ marginTop: spacing.md }}>
-        <Button title="Log out" variant="danger" onPress={handleLogout} />
+        <Button title={t('profile.logout')} variant="danger" onPress={handleLogout} />
       </Card>
     </ScrollView>
   );

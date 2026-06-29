@@ -42,6 +42,12 @@ CLIENT_URL=*
 CLOUDINARY_CLOUD_NAME=your-cloud-name
 CLOUDINARY_API_KEY=your-api-key
 CLOUDINARY_API_SECRET=your-api-secret
+REVENUECAT_WEBHOOK_AUTH_TOKEN=your-render-webhook-token
+REVENUECAT_SECRET_API_KEY=your-revenuecat-secret-api-key
+REVENUECAT_PROJECT_ID=your-revenuecat-project-id
+REVENUECAT_ENTITLEMENT_ID=worker_pro
+SUBSCRIPTIONS_ENABLED=false
+WORKER_FREE_ACCEPTED_REQUEST_LIMIT=5
 ```
 
 For first testing, `CLIENT_URL=*` is okay because the app is mobile. Later, replace it with your real public origins, separated by commas.
@@ -57,6 +63,47 @@ You should see:
 ```json
 {"status":"ok"}
 ```
+
+## Worker Subscription Billing
+
+The worker subscription system uses RevenueCat with verified backend webhook state.
+
+Create the store products in Apple App Store Connect and Google Play Console, then connect them to RevenueCat:
+
+```text
+iOS product: com.workerapp.workerpro.monthly
+Android product: worker_pro_monthly
+Entitlement: worker_pro
+Offering: default
+```
+
+Add the RevenueCat webhook endpoint:
+
+```text
+https://worker-auth.onrender.com/api/v1/webhooks/revenuecat
+```
+
+Use the same token in Render and RevenueCat:
+
+```env
+REVENUECAT_WEBHOOK_AUTH_TOKEN=your-shared-webhook-token
+```
+
+Run database migrations before starting the backend:
+
+```sh
+npx prisma migrate deploy
+```
+
+For Render with project root as the root directory, use:
+
+```sh
+cd backend && npx prisma migrate deploy
+```
+
+Keep `SUBSCRIPTIONS_ENABLED=false` until the store products, RevenueCat entitlement, and webhook are verified. Workers can accept the first `WORKER_FREE_ACCEPTED_REQUEST_LIMIT` requests for free; after that, backend enforcement requires verified Worker Pro access when subscriptions are enabled.
+
+Do not put RevenueCat secret API keys in the mobile app. Mobile uses public RevenueCat SDK keys only. RevenueCat purchases require a development build or production app build; Expo Go can run the app, but cannot run the native purchase flow.
 
 ## 2. Point Expo To The Public Backend
 

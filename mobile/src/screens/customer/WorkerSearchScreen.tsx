@@ -6,6 +6,7 @@ import { Category, RootStackParamList, WorkerProfile } from '@/types';
 import { workerService } from '@/services/workerService';
 import { BodySm, Button, Field, EmptyState, ErrorState, H2, ListSkeleton, Screen, Stack } from '@/components/ui';
 import { WorkerCard } from '@/components/worker';
+import { getLocalizedCategoryName, useLanguage } from '@/i18n';
 import { colors, radius, spacing } from '@/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkerSearch'>;
@@ -44,6 +45,7 @@ function FilterChip({
 }
 
 export default function WorkerSearchScreen({ navigation, route }: Props) {
+  const { t, language } = useLanguage();
   const [query, setQuery] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState(route.params?.categoryId);
 
@@ -67,13 +69,14 @@ export default function WorkerSearchScreen({ navigation, route }: Props) {
   );
 
   const selectedCategory = categories.find(category => category.id === selectedCategoryId);
+  const selectedCategoryName = selectedCategory ? getLocalizedCategoryName(selectedCategory, language.code, t) : '';
   const searchText = query.trim().toLowerCase();
   const workers = useMemo(
     () => all.filter(worker => {
       if (!searchText) return true;
 
       const categoryNames = normalizeWorkerCategories(worker)
-        .map(category => category.name)
+        .map(category => getLocalizedCategoryName(category, language.code, t))
         .join(' ');
       const searchable = [
         worker.user?.fullName,
@@ -83,17 +86,19 @@ export default function WorkerSearchScreen({ navigation, route }: Props) {
 
       return searchable.includes(searchText);
     }),
-    [all, searchText],
+    [all, language.code, searchText, t],
   );
 
-  const resultLabel = `${workers.length} ${workers.length === 1 ? 'worker' : 'workers'}`;
-  const emptyTitle = searchText ? 'No matching workers' : 'No workers found';
+  const resultLabel = workers.length === 1
+    ? t('customer.workers.resultOne')
+    : t('customer.workers.resultMany', { count: workers.length });
+  const emptyTitle = searchText ? t('customer.workers.noMatchingTitle') : t('customer.workers.noFoundTitle');
   const emptyMessage = selectedCategory
-    ? `No workers are available for ${selectedCategory.name} yet. Try all workers.`
+    ? t('customer.workers.noAvailableForCategory', { category: selectedCategoryName })
     : searchText
-    ? 'Try another name, skill, or category.'
-    : 'Try another category or create a request.';
-  const emptyActionLabel = selectedCategoryId ? 'Show all workers' : searchText ? 'Clear search' : 'Browse categories';
+    ? t('customer.workers.tryAnotherSearch')
+    : t('customer.workers.tryAnotherCategory');
+  const emptyActionLabel = selectedCategoryId ? t('customer.workers.showAll') : searchText ? t('customer.workers.clearSearch') : t('requests.create.browseCategories');
   const emptyAction = selectedCategoryId
     ? () => setSelectedCategoryId(undefined)
     : searchText
@@ -104,13 +109,15 @@ export default function WorkerSearchScreen({ navigation, route }: Props) {
     <Screen padded={false}>
       <View style={styles.header}>
         <Stack gap={spacing.xs}>
-          <H2>Find workers</H2>
+          <H2>{t('customer.workers.findTitle')}</H2>
           <BodySm color={colors.textSecondary}>
-            {selectedCategory ? `${resultLabel} for ${selectedCategory.name}` : `${resultLabel} available`}
+            {selectedCategory
+              ? t('customer.workers.resultForCategory', { count: resultLabel, category: selectedCategoryName })
+              : t('customer.workers.resultAvailable', { count: resultLabel })}
           </BodySm>
         </Stack>
         <Field
-          placeholder="Search workers by name or skill…"
+          placeholder={t('customer.workers.searchPlaceholder')}
           value={query}
           onChangeText={setQuery}
           leftIcon="search-outline"
@@ -123,14 +130,14 @@ export default function WorkerSearchScreen({ navigation, route }: Props) {
         contentContainerStyle={styles.filters}
       >
         <FilterChip
-          label="All"
+          label={t('customer.workers.all')}
           selected={!selectedCategoryId}
           onPress={() => setSelectedCategoryId(undefined)}
         />
         {categories.map(category => (
           <FilterChip
             key={category.id}
-            label={category.name}
+            label={getLocalizedCategoryName(category, language.code, t)}
             selected={category.id === selectedCategoryId}
             onPress={() => setSelectedCategoryId(category.id)}
           />
@@ -158,7 +165,7 @@ export default function WorkerSearchScreen({ navigation, route }: Props) {
           ListFooterComponent={
             selectedCategoryId ? (
               <Button
-                title="Show all workers"
+                title={t('customer.workers.showAll')}
                 variant="outline"
                 onPress={() => setSelectedCategoryId(undefined)}
                 style={styles.footerButton}

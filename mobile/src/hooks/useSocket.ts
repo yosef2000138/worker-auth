@@ -8,7 +8,9 @@ import { Message, NotificationItem } from '@/types';
 
 export function useSocket() {
   const token = useAuthStore((s) => s.accessToken);
+  const userId = useAuthStore((s) => s.user?.id);
   const addMessage = useChatStore((s) => s.addMessage);
+  const incrementUnreadCount = useChatStore((s) => s.incrementUnreadCount);
   const addNotification = useNotificationStore((s) => s.addNotification);
   const socket = useMemo(
     () =>
@@ -31,13 +33,22 @@ export function useSocket() {
   useEffect(() => {
     if (!socket) return;
 
-    socket.on('chat:message', (payload: { requestId: string; message: Message }) => addMessage(payload.requestId, payload.message));
+    socket.on('chat:message', (payload: { requestId: string; message: Message }) => {
+      const existingMessages = useChatStore.getState().messagesByRequest[payload.requestId] ?? [];
+      const isDuplicate = existingMessages.some(item => item.id === payload.message.id);
+      addMessage(payload.requestId, payload.message);
+
+      const senderId = payload.message.senderId ?? payload.message.sender?.id;
+      if (!isDuplicate && senderId && senderId !== userId) {
+        incrementUnreadCount();
+      }
+    });
     socket.on('notification:new', (n: NotificationItem) => addNotification(n));
 
     return () => {
       socket.disconnect();
     };
-  }, [socket, addMessage, addNotification]);
+  }, [socket, addMessage, addNotification, incrementUnreadCount, userId]);
 
   return socket;
 }

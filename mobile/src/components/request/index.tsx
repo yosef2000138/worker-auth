@@ -1,19 +1,21 @@
 import React from 'react';
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { getRequestStatusLabel, useLanguage } from '@/i18n';
 import { RequestStatus } from '@/types';
 import { BodySm, Row, Stack } from '@/components/ui';
 import { colors, spacing } from '@/theme';
-import { compactStatus } from '@/utils/formatters';
 
 const STEPS: RequestStatus[] = ['PENDING', 'ACCEPTED', 'ON_THE_WAY', 'IN_PROGRESS', 'COMPLETED'];
 
 export function RequestStatusTimeline({ status }: { status: RequestStatus }) {
+  const { t } = useLanguage();
+
   if (status === 'CANCELLED') {
     return (
       <Row gap={spacing.sm}>
         <Ionicons name="close-circle" size={18} color={colors.danger} />
-        <BodySm color={colors.danger} weight="semibold">cancelled</BodySm>
+        <BodySm color={colors.danger} weight="semibold">{getRequestStatusLabel('CANCELLED', t)}</BodySm>
       </Row>
     );
   }
@@ -32,7 +34,7 @@ export function RequestStatusTimeline({ status }: { status: RequestStatus }) {
             />
             <View style={{ flex: 1 }}>
               <BodySm weight={done ? 'semibold' : 'regular'} color={done ? colors.textPrimary : colors.textSecondary}>
-                {compactStatus(step)}
+                {getRequestStatusLabel(step, t)}
               </BodySm>
             </View>
           </Row>

@@ -6,12 +6,14 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { userService } from '@/services/userService';
 import { Screen, EmptyState, ErrorState, ListSkeleton } from '@/components/ui';
 import { WorkerCard } from '@/components/worker';
+import { useLanguage } from '@/i18n';
 import { spacing } from '@/theme';
 import type { RootStackParamList } from '@/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function FavoritesScreen() {
+  const { t } = useLanguage();
   const navigation = useNavigation<Nav>();
   const queryClient = useQueryClient();
 
@@ -32,9 +34,9 @@ export default function FavoritesScreen() {
       <Screen>
         <EmptyState
           icon="heart-outline"
-          title="No favorites yet"
-          message="When you find a great worker, tap the heart on their profile to save them here."
-          actionLabel="Find workers"
+          title={t('customer.favorites.emptyTitle')}
+          message={t('customer.favorites.emptyMessage')}
+          actionLabel={t('customer.favorites.findWorkers')}
           onAction={() => navigation.navigate('WorkerSearch')}
         />
       </Screen>

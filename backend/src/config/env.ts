@@ -22,6 +22,13 @@ const envSchema = z.object({
 
   CLIENT_URL: z.string().min(1).default('http://localhost:8081'),
 
+  REVENUECAT_WEBHOOK_AUTH_TOKEN: z.string().optional(),
+  REVENUECAT_SECRET_API_KEY: z.string().optional(),
+  REVENUECAT_PROJECT_ID: z.string().optional(),
+  REVENUECAT_ENTITLEMENT_ID: z.string().min(1).default('worker_pro'),
+  SUBSCRIPTIONS_ENABLED: z.coerce.boolean().default(false),
+  WORKER_FREE_ACCEPTED_REQUEST_LIMIT: z.coerce.number().int().min(0).default(5),
+
   // Cloudinary — required for image uploads
   CLOUDINARY_CLOUD_NAME: z.string(),
   CLOUDINARY_API_KEY:    z.string(),

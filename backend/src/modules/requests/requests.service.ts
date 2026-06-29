@@ -2,6 +2,7 @@ import { RequestStatus, Prisma } from '@prisma/client';
 import { db } from '../../config/database';
 import { uploadBuffer } from '../../config/cloudinary';
 import { pushToUser } from '../../utils/fcm';
+import { getWorkerAcceptanceAccess } from '../subscriptions/subscriptions.service';
 
 // ─── FSM ─────────────────────────────────────────────────────────────────────
 type Actor = 'CUSTOMER' | 'WORKER';
@@ -58,6 +59,36 @@ const requestSelect = {
     },
   },
 } satisfies Prisma.ServiceRequestSelect;
+
+function pushStatusNotification(
+  id: string,
+  request: { customerId: string; worker?: { userId?: string } | null },
+  role: Actor,
+  newStatus: RequestStatus,
+  cancellationReason?: string,
+) {
+  const notifyTarget: Partial<
+    Record<RequestStatus, { to: string; title: string; body: string }>
+  > = {
+    ACCEPTED:    { to: request.customerId, title: 'Request accepted!',  body: 'A worker has accepted your request.' },
+    ON_THE_WAY:  { to: request.customerId, title: 'Worker on the way',  body: 'Your worker is heading to you now.' },
+    IN_PROGRESS: { to: request.customerId, title: 'Job started',        body: 'Your service is now in progress.' },
+    COMPLETED:   { to: request.customerId, title: 'Job completed ✅',   body: 'Please leave a review for your worker.' },
+    CANCELLED: {
+      to:
+        role === 'CUSTOMER'
+          ? request.worker?.userId ?? ''
+          : request.customerId,
+      title: 'Request cancelled',
+      body: cancellationReason ?? 'The request has been cancelled.',
+    },
+  };
+
+  const notif = notifyTarget[newStatus];
+  if (notif?.to) {
+    pushToUser(notif.to, notif.title, notif.body, { requestId: id }).catch(() => {});
+  }
+}
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 export async function createRequest(
@@ -186,9 +217,69 @@ export async function updateStatus(
     if (!isPendingAccept && !isAssigned) {
       throw { status: 403, message: 'You are not assigned to this request' };
     }
+
+    if (newStatus === 'ACCEPTED' && request.status === 'ACCEPTED' && isAssigned && request.workerId) {
+      const current = await db.serviceRequest.findUnique({
+        where: { id },
+        select: requestSelect,
+      });
+      if (!current) throw { status: 404, message: 'Request not found' };
+      return current;
+    }
   }
 
   assertTransition(request.status, newStatus, role);
+
+  if (role === 'WORKER' && newStatus === 'ACCEPTED') {
+    const result = await db.$transaction(async (tx) => {
+      const pendingRequest = await tx.serviceRequest.findUnique({
+        where: { id },
+        include: {
+          customer: true,
+          worker: { include: { user: true } },
+        },
+      });
+      if (!pendingRequest) throw { status: 404, message: 'Request not found' };
+      if (pendingRequest.status !== 'PENDING' || pendingRequest.workerId) {
+        throw { status: 409, message: 'Request is no longer available' };
+      }
+
+      const worker = await tx.worker.findUnique({ where: { userId } });
+      if (!worker) throw { status: 404, message: 'Worker profile not found' };
+      if (!worker.approvedAt) throw { status: 403, message: 'Worker not yet approved' };
+
+      const access = await getWorkerAcceptanceAccess(userId, tx, worker.id);
+      if (!access.canAcceptMoreRequests) {
+        throw {
+          status: 402,
+          code: access.reasonCode,
+          message: access.reasonCode === 'WORKER_PRO_NOT_AVAILABLE'
+            ? 'Worker Pro is not available yet.'
+            : 'Worker Pro is required after your free accepted requests are used.',
+          details: access,
+        };
+      }
+
+      const accepted = await tx.serviceRequest.updateMany({
+        where: { id, status: 'PENDING', workerId: null },
+        data: { status: 'ACCEPTED', workerId: worker.id },
+      });
+      if (accepted.count !== 1) {
+        throw { status: 409, message: 'Request is no longer available' };
+      }
+
+      const updated = await tx.serviceRequest.findUnique({
+        where: { id },
+        select: requestSelect,
+      });
+      if (!updated) throw { status: 404, message: 'Request not found' };
+
+      return { request: pendingRequest, updated };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    pushStatusNotification(id, result.request, role, newStatus, cancellationReason);
+    return result.updated;
+  }
 
   // When a worker accepts, link their worker record
   let workerId: string | undefined;
@@ -216,28 +307,7 @@ export async function updateStatus(
     });
   }
 
-  // Fire-and-forget push notifications
-  const notifyTarget: Partial<
-    Record<RequestStatus, { to: string; title: string; body: string }>
-  > = {
-    ACCEPTED:    { to: request.customerId, title: 'Request accepted!',  body: 'A worker has accepted your request.' },
-    ON_THE_WAY:  { to: request.customerId, title: 'Worker on the way',  body: 'Your worker is heading to you now.' },
-    IN_PROGRESS: { to: request.customerId, title: 'Job started',        body: 'Your service is now in progress.' },
-    COMPLETED:   { to: request.customerId, title: 'Job completed ✅',   body: 'Please leave a review for your worker.' },
-    CANCELLED: {
-      to:
-        role === 'CUSTOMER'
-          ? request.worker?.userId ?? ''
-          : request.customerId,
-      title: 'Request cancelled',
-      body: cancellationReason ?? 'The request has been cancelled.',
-    },
-  };
-
-  const notif = notifyTarget[newStatus];
-  if (notif?.to) {
-    pushToUser(notif.to, notif.title, notif.body, { requestId: id }).catch(() => {});
-  }
+  pushStatusNotification(id, request, role, newStatus, cancellationReason);
 
   return updated;
 }

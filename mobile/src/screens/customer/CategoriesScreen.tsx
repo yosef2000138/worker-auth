@@ -6,11 +6,13 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types';
 import { workerService } from '@/services/workerService';
 import { Body, BodySm, Card, EmptyState, ErrorState, H2, ListSkeleton, Row, Screen, Stack } from '@/components/ui';
+import { getLocalizedCategoryName, useLanguage } from '@/i18n';
 import { colors, spacing } from '@/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Categories'>;
 
 export default function CategoriesScreen({ navigation }: Props) {
+  const { t, isRTL, language } = useLanguage();
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['categories'],
     queryFn: workerService.categories,
@@ -24,15 +26,15 @@ export default function CategoriesScreen({ navigation }: Props) {
   return (
     <Screen padded={false}>
       <View style={styles.header}>
-        <H2>Choose a service</H2>
-        <BodySm color={colors.textSecondary}>Pick a category to find workers or create a request.</BodySm>
+        <H2>{t('customer.categories.title')}</H2>
+        <BodySm color={colors.textSecondary}>{t('customer.categories.subtitle')}</BodySm>
       </View>
 
       {categories.length === 0 ? (
         <EmptyState
           icon="grid-outline"
-          title="No categories yet"
-          message="Ask an admin to add active service categories."
+          title={t('customer.categories.emptyTitle')}
+          message={t('customer.categories.emptyMessage')}
         />
       ) : (
         <FlatList
@@ -40,25 +42,28 @@ export default function CategoriesScreen({ navigation }: Props) {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
-          renderItem={({ item }) => (
-            <Pressable
-              onPress={() => navigation.navigate('WorkerSearch', { categoryId: item.id })}
-              style={({ pressed }) => pressed ? { opacity: 0.75 } : undefined}
-            >
-              <Card>
-                <Row gap={spacing.md}>
-                  <View style={styles.iconBox}>
-                    <Ionicons name={(item.icon as any) || 'construct-outline'} size={22} color={colors.brand} />
-                  </View>
-                  <Stack gap={spacing.xs} style={{ flex: 1 }}>
-                    <Body weight="bold">{item.name}</Body>
-                    {item.description ? <BodySm color={colors.textSecondary}>{item.description}</BodySm> : null}
-                  </Stack>
-                  <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-                </Row>
-              </Card>
-            </Pressable>
-          )}
+          renderItem={({ item }) => {
+            const categoryName = getLocalizedCategoryName(item, language.code, t);
+            return (
+              <Pressable
+                onPress={() => navigation.navigate('WorkerSearch', { categoryId: item.id })}
+                style={({ pressed }) => pressed ? { opacity: 0.75 } : undefined}
+              >
+                <Card>
+                  <Row gap={spacing.md}>
+                    <View style={styles.iconBox}>
+                      <Ionicons name={(item.icon as any) || 'construct-outline'} size={22} color={colors.brand} />
+                    </View>
+                    <Stack gap={spacing.xs} style={{ flex: 1 }}>
+                      <Body weight="bold">{categoryName}</Body>
+                      {item.description ? <BodySm color={colors.textSecondary}>{item.description}</BodySm> : null}
+                    </Stack>
+                    <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={18} color={colors.textTertiary} />
+                  </Row>
+                </Card>
+              </Pressable>
+            );
+          }}
         />
       )}
     </Screen>

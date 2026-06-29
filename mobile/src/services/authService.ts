@@ -1,4 +1,4 @@
-import { api, clearTokens, getRefreshToken, setTokens, unwrap } from './api';
+import { api, clearTokens, refreshAuthTokens, setTokens, unwrap } from './api';
 import { AuthResult, Role, User } from '@/types';
 export type RegisterPayload = { fullName: string; email: string; phone?: string; password: string; role: Exclude<Role, 'ADMIN'> };
 export type LoginPayload = { email: string; password: string };
@@ -16,11 +16,9 @@ export const authService = {
   },  
   async logout() { await api.post('/auth/logout').catch(() => undefined); await clearTokens(); },
   async refresh() {
-    const refreshToken = await getRefreshToken();
-    if (!refreshToken) throw new Error('No refresh token');
     try {
-      const data = unwrap<AuthResult>(await api.post('/auth/refresh', { refreshToken }));
-      await setTokens(data.accessToken, data.refreshToken);
+      const data = await refreshAuthTokens();
+      if (!data) throw new Error('No refresh token');
       return data;
     } catch (err) {
       await clearTokens();

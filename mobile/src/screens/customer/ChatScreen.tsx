@@ -4,24 +4,29 @@ import {
   StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types';
 import { requestService } from '@/services/requestService';
 import { useAuthStore } from '@/store/authStore';
+import { useChatStore } from '@/store/chatStore';
 import { colors, fontSize, fontWeight, radius, spacing } from '@/theme';
 import { Avatar, Banner, Body, ErrorState, ListSkeleton } from '@/components/ui';
-import { formatDate } from '@/utils/formatters';
+import { formatAppDate, useLanguage } from '@/i18n';
 import type { Message } from '@/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
 export default function ChatScreen({ route }: Props) {
   const { requestId } = route.params;
+  const { t, locale } = useLanguage();
   const user = useAuthStore(s => s.user);
+  const setUnreadCount = useChatStore(s => s.setUnreadCount);
   const queryClient = useQueryClient();
   const [content, setContent] = useState('');
   const flatRef = useRef<FlatList>(null);
+  const lastMarkedMessageId = useRef<string | null>(null);
 
   const { data: httpMessages, isLoading, isError, refetch } = useQuery({
     queryKey: ['messages', requestId],
@@ -36,11 +41,35 @@ export default function ChatScreen({ route }: Props) {
     );
   }, [httpMessages]);
 
+  const syncUnreadCount = React.useCallback(async () => {
+    await requestService.markRead(requestId).catch(() => undefined);
+    const result = await requestService.unreadCount().catch(() => undefined);
+    if (typeof result === 'number') {
+      setUnreadCount(result);
+    } else if (result && typeof result === 'object' && 'unreadCount' in result) {
+      const count = Number((result as { unreadCount?: unknown }).unreadCount);
+      setUnreadCount(Number.isFinite(count) ? count : 0);
+    }
+    queryClient.invalidateQueries({ queryKey: ['messages-unread-count'] });
+  }, [queryClient, requestId, setUnreadCount]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void syncUnreadCount();
+    }, [syncUnreadCount]),
+  );
+
   useEffect(() => {
     if (merged.length > 0) {
       setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 100);
+
+      const latestMessageId = merged[merged.length - 1]?.id ?? null;
+      if (latestMessageId && latestMessageId !== lastMarkedMessageId.current) {
+        lastMarkedMessageId.current = latestMessageId;
+        void syncUnreadCount();
+      }
     }
-  }, [merged.length]);
+  }, [merged, syncUnreadCount]);
 
   const send = useMutation({
     mutationFn: () => requestService.sendMessage(requestId, content.trim()),
@@ -73,7 +102,7 @@ export default function ChatScreen({ route }: Props) {
         <View style={styles.emptyWrap}>
           <Ionicons name="chatbubbles-outline" size={48} color={colors.textTertiary} />
           <Body color={colors.textSecondary} center style={{ marginTop: spacing.md }}>
-            No messages yet. Say hello to get started.
+            {t('messages.chat.empty')}
           </Body>
         </View>
       ) : (
@@ -99,7 +128,7 @@ export default function ChatScreen({ route }: Props) {
                     {item.content}
                   </Text>
                   <Text style={[styles.bubbleTime, isOwn ? styles.bubbleTimeOwn : styles.bubbleTimeOther]}>
-                    {formatDate(item.createdAt)}
+                    {formatAppDate(item.createdAt, locale)}
                   </Text>
                 </View>
               </View>
@@ -109,13 +138,13 @@ export default function ChatScreen({ route }: Props) {
       )}
 
       {send.isError ? (
-        <Banner tone="danger" message={send.error?.message ?? 'Could not send message.'} />
+        <Banner tone="danger" message={send.error?.message ?? t('messages.chat.sendFailed')} />
       ) : null}
 
       <View style={styles.inputBar}>
         <TextInput
           style={styles.input}
-          placeholder="Type a message…"
+          placeholder={t('messages.chat.placeholder')}
           placeholderTextColor={colors.textTertiary}
           value={content}
           onChangeText={setContent}

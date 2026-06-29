@@ -11,14 +11,18 @@ import {
   ErrorState, ListSkeleton, Divider,
 } from '@/components/ui';
 import { RatingStars } from '@/components/ui/Rating';
+import { formatAppDate, formatCurrency, getLocalizedCategoryName, useLanguage } from '@/i18n';
 import { colors, spacing } from '@/theme';
-import { formatMoney } from '@/utils/formatters';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkerProfile'>;
 
-const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function dayLabel(dayOfWeek: number, locale: string) {
+  const sunday = new Date(Date.UTC(2024, 0, 7 + dayOfWeek));
+  return formatAppDate(sunday, locale, { weekday: 'short' });
+}
 
 export default function WorkerProfileScreen({ route, navigation }: Props) {
+  const { t, locale, language } = useLanguage();
   const { workerId } = route.params;
   const queryClient = useQueryClient();
 
@@ -48,9 +52,9 @@ export default function WorkerProfileScreen({ route, navigation }: Props) {
 
   const categories = (worker?.categories ?? []).map((c: any) => ('category' in c ? c.category : c));
   const price = worker?.hourlyRate != null
-    ? `${formatMoney(worker.hourlyRate)}/hr`
+    ? `${formatCurrency(worker.hourlyRate, locale)}/${t('common.hoursShort')}`
     : worker?.fixedPrice != null
-    ? `${formatMoney(worker.fixedPrice)} fixed`
+    ? `${formatCurrency(worker.fixedPrice, locale)} ${t('common.fixed')}`
     : null;
   const primaryCategoryId = categories[0]?.id;
   const openRequest = () => navigation.navigate(
@@ -69,7 +73,7 @@ export default function WorkerProfileScreen({ route, navigation }: Props) {
           <Avatar uri={worker.user?.avatarUrl} name={worker.user?.fullName} size={72} />
           <Stack gap={spacing.xs} style={{ flex: 1 }}>
             <Row justify="space-between" align="flex-start">
-              <H2 style={{ flex: 1 }}>{worker.user?.fullName ?? 'Worker'}</H2>
+              <H2 style={{ flex: 1 }}>{worker.user?.fullName ?? t('common.workerRole')}</H2>
               <Ionicons
                 name={isFavorite ? 'heart' : 'heart-outline'}
                 size={22}
@@ -83,7 +87,7 @@ export default function WorkerProfileScreen({ route, navigation }: Props) {
               count={worker.totalReviews ?? worker.ratingCount ?? 0}
             />
             <Row gap={spacing.sm} wrap>
-              {worker.isAvailable ? <Badge label="Available now" tone="success" /> : <Badge label="Unavailable" tone="neutral" />}
+              {worker.isAvailable ? <Badge label={t('customer.workerProfile.availableNow')} tone="success" /> : <Badge label={t('common.unavailable')} tone="neutral" />}
               {price ? <Badge label={price} tone="brand" /> : null}
             </Row>
           </Stack>
@@ -99,9 +103,9 @@ export default function WorkerProfileScreen({ route, navigation }: Props) {
         <Divider style={{ marginVertical: spacing.md }} />
         <Row justify="space-around">
           {[
-            { icon: 'briefcase-outline' as const, value: `${worker.totalJobs ?? 0}`, label: 'Jobs done' },
-            { icon: 'star-outline' as const, value: (worker.ratingAvg ?? 0).toFixed(1), label: 'Rating' },
-            { icon: 'time-outline' as const, value: `${worker.yearsExp ?? 0}yr`, label: 'Experience' },
+            { icon: 'briefcase-outline' as const, value: `${worker.totalJobs ?? 0}`, label: t('customer.workerProfile.jobsDone') },
+            { icon: 'star-outline' as const, value: (worker.ratingAvg ?? 0).toFixed(1), label: t('customer.workerProfile.rating') },
+            { icon: 'time-outline' as const, value: t('customer.workerProfile.yearsShort', { count: worker.yearsExp ?? 0 }), label: t('customer.workerProfile.experience') },
           ].map(stat => (
             <Stack key={stat.label} gap={2} style={{ alignItems: 'center' }}>
               <Ionicons name={stat.icon} size={18} color={colors.textSecondary} />
@@ -115,9 +119,9 @@ export default function WorkerProfileScreen({ route, navigation }: Props) {
       {/* Categories */}
       {categories.length > 0 && (
         <Card style={{ marginTop: spacing.md }}>
-          <H3 style={{ marginBottom: spacing.sm }}>Services offered</H3>
+          <H3 style={{ marginBottom: spacing.sm }}>{t('customer.workerProfile.servicesOffered')}</H3>
           <Row gap={spacing.sm} wrap>
-            {categories.map((c: any) => <Badge key={c.id} label={c.name} tone="neutral" />)}
+            {categories.map((c: any) => <Badge key={c.id} label={getLocalizedCategoryName(c, language.code, t)} tone="neutral" />)}
           </Row>
         </Card>
       )}
@@ -125,11 +129,11 @@ export default function WorkerProfileScreen({ route, navigation }: Props) {
       {/* Availability */}
       {worker.availability && worker.availability.length > 0 && (
         <Card style={{ marginTop: spacing.md }}>
-          <H3 style={{ marginBottom: spacing.sm }}>Availability</H3>
+          <H3 style={{ marginBottom: spacing.sm }}>{t('customer.workerProfile.availability')}</H3>
           <Stack gap={spacing.xs}>
             {worker.availability.map(slot => (
               <Row key={slot.id} justify="space-between">
-                <BodySm weight="semibold">{DAY_LABELS[slot.dayOfWeek]}</BodySm>
+                <BodySm weight="semibold">{dayLabel(slot.dayOfWeek, locale)}</BodySm>
                 <BodySm color={colors.textSecondary}>{slot.startTime} – {slot.endTime}</BodySm>
               </Row>
             ))}
@@ -140,7 +144,7 @@ export default function WorkerProfileScreen({ route, navigation }: Props) {
       {/* Reviews */}
       {reviews.length > 0 && (
         <Card style={{ marginTop: spacing.md }}>
-          <H3 style={{ marginBottom: spacing.md }}>Recent reviews</H3>
+          <H3 style={{ marginBottom: spacing.md }}>{t('customer.workerProfile.recentReviews')}</H3>
           <Stack gap={spacing.lg}>
             {reviews.slice(0, 3).map(r => (
               <Stack key={r.id} gap={spacing.xs}>
@@ -148,7 +152,7 @@ export default function WorkerProfileScreen({ route, navigation }: Props) {
                   <Avatar uri={r.reviewer?.avatarUrl} name={r.reviewer?.fullName} size={32} />
                   <Stack gap={2} style={{ flex: 1 }}>
                     <Row justify="space-between">
-                      <BodySm weight="semibold">{r.reviewer?.fullName ?? 'Customer'}</BodySm>
+                      <BodySm weight="semibold">{r.reviewer?.fullName ?? t('common.customer')}</BodySm>
                       <RatingStars rating={r.rating} showValue={false} size={12} />
                     </Row>
                     {r.comment ? <BodySm color={colors.textSecondary}>{r.comment}</BodySm> : null}
@@ -163,11 +167,11 @@ export default function WorkerProfileScreen({ route, navigation }: Props) {
       {/* CTA */}
       <Stack gap={spacing.sm} style={{ marginTop: spacing.lg }}>
         <Button
-          title="Request this worker"
+          title={t('customer.workerProfile.requestThisWorker')}
           onPress={openRequest}
         />
         <Button
-          title="Create request to chat"
+          title={t('customer.workerProfile.createRequestToChat')}
           variant="outline"
           onPress={openRequest}
         />

@@ -45,6 +45,13 @@ function safeUser(user: {
   };
 }
 
+function sendVerificationEmailInBackground(email: string, token: string) {
+  sendVerificationEmail(email, token).catch((err) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`Verification email failed for ${email}: ${message}`);
+  });
+}
+
 // ─── Register ────────────────────────────────────────────────────────────────
 
 export async function register(input: RegisterInput) {
@@ -69,14 +76,6 @@ export async function register(input: RegisterInput) {
   // Store email verification token in Redis (24h)
   await storeRefreshToken(`verify:${user.id}`, verifyToken, 86400);
 
-  if (env.NODE_ENV === 'production') {
-    await sendVerificationEmail(input.email, verifyToken);
-  } else {
-    sendVerificationEmail(input.email, verifyToken).catch((err) => {
-      console.warn('Skipping verification email in development:', err.message);
-    });
-  }
-
   // If worker role, create worker profile scaffold
   if (input.role === 'WORKER') {
     await db.worker.create({ data: { userId: user.id } });
@@ -90,6 +89,8 @@ export async function register(input: RegisterInput) {
     refreshToken,
     parseTTLSeconds(env.JWT_REFRESH_EXPIRES_IN),
   );
+
+  sendVerificationEmailInBackground(input.email, verifyToken);
 
   return { user: safeUser(user), accessToken, refreshToken };
 }

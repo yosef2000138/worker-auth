@@ -4,8 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { WorkerProfile } from '@/types';
 import { Avatar, Badge, Body, BodySm, Card, Row, Stack } from '@/components/ui';
 import { RatingStars } from '@/components/ui/Rating';
+import { formatCurrency, useLanguage } from '@/i18n';
 import { colors, spacing } from '@/theme';
-import { formatMoney } from '@/utils/formatters';
 
 export function WorkerCard({
   worker,
@@ -18,11 +18,12 @@ export function WorkerCard({
   onToggleFavorite?: () => void;
   onPress?: () => void;
 }) {
-  const name = worker.user?.fullName ?? 'Worker';
+  const { t, locale } = useLanguage();
+  const name = worker.user?.fullName ?? t('common.workerRole');
   const price = worker.hourlyRate != null
-    ? `${formatMoney(worker.hourlyRate)}/hr`
+    ? `${formatCurrency(worker.hourlyRate, locale)}/${t('common.hoursShort')}`
     : worker.fixedPrice != null
-    ? `${formatMoney(worker.fixedPrice)} fixed`
+    ? `${formatCurrency(worker.fixedPrice, locale)} ${t('common.fixed')}`
     : null;
 
   return (
@@ -46,7 +47,7 @@ export function WorkerCard({
             <RatingStars rating={worker.ratingAvg ?? 0} count={worker.totalReviews ?? worker.ratingCount ?? 0} />
             {worker.bio ? <BodySm color={colors.textSecondary} numberOfLines={2}>{worker.bio}</BodySm> : null}
             <Row gap={spacing.sm} wrap>
-              {worker.isAvailable ? <Badge label="Available" tone="success" /> : <Badge label="Unavailable" />}
+              {worker.isAvailable ? <Badge label={t('common.available')} tone="success" /> : <Badge label={t('common.unavailable')} />}
               {price ? <Badge label={price} tone="brand" /> : null}
             </Row>
           </Stack>

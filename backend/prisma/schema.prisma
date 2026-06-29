@@ -36,6 +36,32 @@ enum PaymentStatus {
   FAILED
 }
 
+enum SubscriptionProvider {
+  REVENUECAT
+}
+
+enum SubscriptionPlatform {
+  ANDROID
+  IOS
+  UNKNOWN
+}
+
+enum SubscriptionEnvironment {
+  SANDBOX
+  PRODUCTION
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIAL
+  GRACE_PERIOD
+  BILLING_ISSUE
+  CANCELLED
+  EXPIRED
+  REFUNDED
+  UNKNOWN
+}
+
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 model User {
@@ -58,6 +84,7 @@ model User {
   favorites        Favorite[]
   reviewsGiven     Review[]         @relation("ReviewsGiven")
   reviewsReceived  Review[]         @relation("ReviewsReceived")
+  subscriptions     UserSubscription[]
 
   @@map("users")
 }
@@ -228,6 +255,49 @@ model Payment {
   request ServiceRequest @relation(fields: [requestId], references: [id])
 
   @@map("payments")
+}
+
+model UserSubscription {
+  id                    String                  @id @default(uuid())
+  userId                String
+  provider              SubscriptionProvider    @default(REVENUECAT)
+  entitlementId         String
+  storeProductId        String?
+  platform              SubscriptionPlatform    @default(UNKNOWN)
+  environment           SubscriptionEnvironment @default(SANDBOX)
+  status                SubscriptionStatus      @default(UNKNOWN)
+  originalTransactionId String?
+  appUserId             String?
+  purchaseDate          DateTime?
+  originalPurchaseDate  DateTime?
+  expirationDate        DateTime?
+  willRenew             Boolean?
+  cancellationDate      DateTime?
+  billingIssueDate      DateTime?
+  lastEventId           String?
+  lastEventType         String?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, originalTransactionId])
+  @@index([userId, provider, entitlementId])
+  @@index([appUserId])
+  @@index([status])
+  @@map("user_subscriptions")
+}
+
+model SubscriptionWebhookEvent {
+  id              String               @id @default(uuid())
+  provider        SubscriptionProvider @default(REVENUECAT)
+  providerEventId String
+  type            String
+  processedAt     DateTime?
+  createdAt       DateTime             @default(now())
+
+  @@unique([provider, providerEventId])
+  @@map("subscription_webhook_events")
 }
 
 // ─── Favorites ────────────────────────────────────────────────────────────────

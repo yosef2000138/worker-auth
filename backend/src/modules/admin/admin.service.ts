@@ -149,6 +149,22 @@ export async function getUser(id: string) {
     select: {
       id: true, fullName: true, email: true, phone: true,
       role: true, avatarUrl: true, isVerified: true, isActive: true, createdAt: true,
+      subscriptions: {
+        select: {
+          id: true,
+          provider: true,
+          entitlementId: true,
+          storeProductId: true,
+          platform: true,
+          environment: true,
+          status: true,
+          expirationDate: true,
+          willRenew: true,
+          updatedAt: true,
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 1,
+      },
       worker: {
         select: {
           id: true, bio: true, ratingAvg: true, totalJobs: true,
@@ -205,7 +221,32 @@ export async function listWorkers(opts: {
       select: {
         id: true, bio: true, ratingAvg: true, totalJobs: true, totalReviews: true,
         isAvailable: true, approvedAt: true, createdAt: true,
-        user: { select: { id: true, fullName: true, email: true, phone: true, avatarUrl: true, isActive: true } },
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            phone: true,
+            avatarUrl: true,
+            isActive: true,
+            subscriptions: {
+              select: {
+                id: true,
+                provider: true,
+                entitlementId: true,
+                storeProductId: true,
+                platform: true,
+                environment: true,
+                status: true,
+                expirationDate: true,
+                willRenew: true,
+                updatedAt: true,
+              },
+              orderBy: { updatedAt: 'desc' },
+              take: 1,
+            },
+          },
+        },
         categories: { select: { category: { select: { id: true, name: true } } } },
       },
       orderBy: { createdAt: 'desc' },

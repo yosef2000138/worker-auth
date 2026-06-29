@@ -14,9 +14,9 @@ import {
   ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { getRequestStatusLabel, useLanguage } from '@/i18n';
 import { colors, fontSize, fontWeight, radius, spacing } from '@/theme';
 import { RequestStatus } from '@/types';
-import { compactStatus } from '@/utils/formatters';
 
 type TextTone = keyof Pick<typeof colors, 'textPrimary' | 'textSecondary' | 'textTertiary' | 'danger' | 'success' | 'brand' | 'textInverse'>;
 type AppTextProps = TextProps & {
@@ -27,14 +27,28 @@ type AppTextProps = TextProps & {
 };
 
 function AppText({ children, style, color = colors.textPrimary, center, weight, ...props }: AppTextProps) {
+  const { isRTL, copy } = useLanguage();
+  const displayChildren = typeof children === 'string' ? copy(children) : children;
   return (
     <Text
-      style={[{ color, textAlign: center ? 'center' : undefined, fontWeight: weight ? fontWeight[weight] : undefined }, style]}
+      style={[
+        {
+          color,
+          textAlign: center ? 'center' : isRTL ? 'right' : 'left',
+          writingDirection: isRTL ? 'rtl' : 'ltr',
+          fontWeight: weight ? fontWeight[weight] : undefined,
+        },
+        style,
+      ]}
       {...props}
     >
-      {children}
+      {displayChildren}
     </Text>
   );
+}
+
+export function LocalizedText(props: AppTextProps) {
+  return <AppText {...props} />;
 }
 
 export function Screen({ children, padded = true }: { children: React.ReactNode; padded?: boolean }) {
@@ -60,7 +74,8 @@ export function Row({
   wrap?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
-  return <View style={[{ flexDirection: 'row', gap, justifyContent: justify, alignItems: align, flexWrap: wrap ? 'wrap' : 'nowrap' }, style]}>{children}</View>;
+  const { isRTL } = useLanguage();
+  return <View style={[{ flexDirection: isRTL ? 'row-reverse' : 'row', gap, justifyContent: justify, alignItems: align, flexWrap: wrap ? 'wrap' : 'nowrap' }, style]}>{children}</View>;
 }
 
 export function Card({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
@@ -85,6 +100,7 @@ export function Button({
   icon,
   style,
   disabled,
+  accessibilityLabel,
 }: {
   title: string;
   onPress?: PressableProps['onPress'];
@@ -95,7 +111,9 @@ export function Button({
   icon?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   disabled?: boolean;
+  accessibilityLabel?: string;
 }) {
+  const { copy } = useLanguage();
   const isOutline = variant === 'outline';
   const isGhost = variant === 'ghost';
   const isDanger = variant === 'danger';
@@ -114,11 +132,13 @@ export function Button({
       ]}
       onPress={onPress}
       disabled={loading || disabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? title}
     >
       {loading ? <ActivityIndicator color={textColor} /> : (
         <Row gap={spacing.xs} justify="center">
           {icon}
-          <Text style={[styles.buttonText, { color: textColor }, size === 'sm' && styles.buttonTextSm]}>{title}</Text>
+          <Text style={[styles.buttonText, { color: textColor }, size === 'sm' && styles.buttonTextSm]}>{copy(title)}</Text>
         </Row>
       )}
     </Pressable>
@@ -138,19 +158,29 @@ export function Field({
   leftIcon?: keyof typeof Ionicons.glyphMap;
   containerStyle?: StyleProp<ViewStyle>;
 }) {
+  const { isRTL, copy } = useLanguage();
+  const naturalLtr =
+    props.secureTextEntry
+    || props.keyboardType === 'email-address'
+    || props.keyboardType === 'phone-pad'
+    || props.keyboardType === 'number-pad'
+    || props.keyboardType === 'numeric'
+    || props.keyboardType === 'decimal-pad'
+    || props.keyboardType === 'url';
+  const inputDirection = naturalLtr ? 'ltr' : isRTL ? 'rtl' : 'ltr';
   return (
     <View style={[{ gap: spacing.xs }, containerStyle]}>
-      {label ? <BodySm weight="semibold">{label}</BodySm> : null}
-      <View style={styles.inputWrap}>
+      {label ? <BodySm weight="semibold">{copy(label)}</BodySm> : null}
+      <View style={[styles.inputWrap, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
         {leftIcon ? <Ionicons name={leftIcon} size={18} color={colors.textTertiary} /> : null}
         <TextInput
           placeholderTextColor={colors.textTertiary}
-          style={[styles.input, style]}
+          style={[styles.input, { textAlign: naturalLtr ? 'left' : isRTL ? 'right' : 'left', writingDirection: inputDirection }, style]}
           autoCapitalize="none"
           {...props}
         />
       </View>
-      {helperText ? <Caption>{helperText}</Caption> : null}
+      {helperText ? <Caption>{copy(helperText)}</Caption> : null}
     </View>
   );
 }
@@ -166,6 +196,7 @@ export function Avatar({ uri, name, size = 44 }: { uri?: string | null; name?: s
 }
 
 export function Badge({ label, tone = 'neutral' }: { label: string; tone?: 'neutral' | 'brand' | 'success' | 'danger' }) {
+  const { copy } = useLanguage();
   const palette = tone === 'success'
     ? { bg: colors.successSoft, fg: colors.success }
     : tone === 'brand'
@@ -173,13 +204,14 @@ export function Badge({ label, tone = 'neutral' }: { label: string; tone?: 'neut
     : tone === 'danger'
     ? { bg: colors.dangerSoft, fg: colors.danger }
     : { bg: '#F1F5F9', fg: colors.textSecondary };
-  return <Text style={[styles.badge, { backgroundColor: palette.bg, color: palette.fg }]}>{label}</Text>;
+  return <Text style={[styles.badge, { backgroundColor: palette.bg, color: palette.fg }]}>{copy(label)}</Text>;
 }
 
 export function Banner({ tone = 'success', message }: { tone?: 'success' | 'danger' | 'warning'; message: string }) {
+  const { copy } = useLanguage();
   const bg = tone === 'danger' ? colors.dangerSoft : tone === 'warning' ? colors.warningSoft : colors.successSoft;
   const fg = tone === 'danger' ? colors.danger : tone === 'warning' ? colors.warning : colors.success;
-  return <Text style={[styles.banner, { backgroundColor: bg, color: fg }]}>{message}</Text>;
+  return <Text style={[styles.banner, { backgroundColor: bg, color: fg }]}>{copy(message)}</Text>;
 }
 
 export function Divider({ style }: { style?: StyleProp<ViewStyle> }) {
@@ -209,8 +241,18 @@ export function EmptyState({
   );
 }
 
-export function ErrorState({ onRetry, message = 'Something went wrong.' }: { onRetry?: () => void; message?: string }) {
-  return <EmptyState icon="warning-outline" title={message} actionLabel={onRetry ? 'Try again' : undefined} onAction={onRetry} />;
+export function ErrorState({ onRetry, message }: { onRetry?: () => void; message?: string }) {
+  const { t } = useLanguage();
+  return <EmptyState icon="warning-outline" title={message ?? t('errors.generic')} actionLabel={onRetry ? t('common.retry') : undefined} onAction={onRetry} />;
+}
+
+export function ScreenHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <Stack gap={spacing.xs}>
+      <H2>{title}</H2>
+      {subtitle ? <BodySm color={colors.textSecondary}>{subtitle}</BodySm> : null}
+    </Stack>
+  );
 }
 
 export function ListSkeleton({ count = 3 }: { count?: number }) {
@@ -222,8 +264,9 @@ export function ListSkeleton({ count = 3 }: { count?: number }) {
 }
 
 export function StatusBadge({ status }: { status: RequestStatus }) {
+  const { t } = useLanguage();
   const tone = status === 'COMPLETED' ? 'success' : status === 'CANCELLED' ? 'danger' : status === 'PENDING' ? 'brand' : 'neutral';
-  return <Badge label={compactStatus(status)} tone={tone} />;
+  return <Badge label={getRequestStatusLabel(status, t)} tone={tone} />;
 }
 
 const styles = StyleSheet.create({

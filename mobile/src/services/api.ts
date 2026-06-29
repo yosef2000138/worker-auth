@@ -1,5 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import { useAuthStore } from '@/store/authStore';
+import type { AuthResult } from '@/types';
 
 const DEFAULT_API_URL = 'https://worker-auth.onrender.com/api/v1';
 const DEFAULT_SOCKET_URL = 'https://worker-auth.onrender.com';
@@ -14,7 +16,67 @@ export const SOCKET_URL = normalizeUrl(process.env.EXPO_PUBLIC_SOCKET_URL, DEFAU
 export const ACCESS_TOKEN_KEY = 'worker_app_access_token';
 export const REFRESH_TOKEN_KEY = 'worker_app_refresh_token';
 
-export const api = axios.create({ baseURL: API_URL, timeout: 30000, headers: { Accept: 'application/json' } });
+type RetriableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean };
+type ApiErrorBody = {
+  message?: string;
+  errors?: unknown;
+  error?: {
+    code?: string;
+    message?: string;
+    details?: unknown;
+  };
+};
+
+export class ApiRequestError extends Error {
+  code?: string;
+  details?: unknown;
+  status?: number;
+
+  constructor(message: string, options?: { code?: string; details?: unknown; status?: number }) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.code = options?.code;
+    this.details = options?.details;
+    this.status = options?.status;
+  }
+}
+
+export const api = axios.create({ baseURL: API_URL, timeout: 120000, headers: { Accept: 'application/json' } });
+
+let refreshPromise: Promise<AuthResult | null> | null = null;
+
+async function performRefresh() {
+  const refreshToken = await getRefreshToken();
+  if (!refreshToken) return null;
+
+  const response = await axios.post<{ data: AuthResult }>(
+    `${API_URL}/auth/refresh`,
+    { refreshToken },
+    { headers: { Accept: 'application/json' } },
+  );
+  const data = response.data.data;
+  await setTokens(data.accessToken, data.refreshToken);
+  useAuthStore.getState().setAuth(data);
+  return data;
+}
+
+export async function refreshAuthTokens() {
+  refreshPromise ??= performRefresh().finally(() => {
+    refreshPromise = null;
+  });
+
+  return refreshPromise;
+}
+
+async function refreshAccessToken() {
+  const data = await refreshAuthTokens();
+  return data?.accessToken ?? null;
+}
+
+function shouldRefreshForRequest(config: RetriableRequestConfig) {
+  const url = config.url ?? '';
+  return !url.startsWith('/auth/');
+}
 
 api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   const token = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
@@ -22,9 +84,38 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   return config;
 });
 
-api.interceptors.response.use(r => r, (error: AxiosError<{ message?: string }>) => {
-  const msg = error.response?.data?.message ?? error.message ?? 'Request failed';
-  return Promise.reject(new Error(msg));
+api.interceptors.response.use(r => r, async (error: AxiosError<ApiErrorBody>) => {
+  const originalRequest = error.config as RetriableRequestConfig | undefined;
+
+  if (error.response?.status === 401 && originalRequest && !originalRequest._retry && shouldRefreshForRequest(originalRequest)) {
+    originalRequest._retry = true;
+
+    try {
+      const accessToken = await refreshAccessToken();
+
+      if (accessToken) {
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        return api(originalRequest);
+      }
+
+      await clearTokens();
+      useAuthStore.getState().logoutLocal();
+    } catch {
+      await clearTokens();
+      useAuthStore.getState().logoutLocal();
+    }
+  }
+
+  if (error.code === 'ECONNABORTED') {
+    return Promise.reject(new ApiRequestError('The server is waking up. Please try again in a moment.', { status: error.response?.status }));
+  }
+  const body = error.response?.data;
+  const msg = body?.error?.message ?? body?.message ?? error.message ?? 'Request failed';
+  return Promise.reject(new ApiRequestError(msg, {
+    code: body?.error?.code,
+    details: body?.error?.details ?? body?.errors,
+    status: error.response?.status,
+  }));
 });
 
 export async function setTokens(accessToken?: string, refreshToken?: string) {

@@ -3,14 +3,21 @@
     "name": "WorkerApp",
     "slug": "worker-app",
     "version": "1.0.0",
+    "scheme": "worker",
     "orientation": "portrait",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.yosefjirees.workerapp"
     },
     "android": {
       "package": "com.yosefjirees.workerapp"
-    }
+    },
+    "plugins": [
+      "expo-font"
+    ]
   }
 }

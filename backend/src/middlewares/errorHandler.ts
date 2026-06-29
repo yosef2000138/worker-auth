@@ -4,6 +4,8 @@ import { env } from '../config/env';
 interface AppError {
   status?: number;
   message?: string;
+  code?: string;
+  details?: unknown;
   stack?: string;
 }
 
@@ -23,6 +25,13 @@ export function errorHandler(
   res.status(status).json({
     success: false,
     message,
+    ...(err.code && {
+      error: {
+        code: err.code,
+        message,
+        ...(err.details !== undefined && { details: err.details }),
+      },
+    }),
     ...(env.NODE_ENV === 'development' && { stack: err.stack }),
   });
 }

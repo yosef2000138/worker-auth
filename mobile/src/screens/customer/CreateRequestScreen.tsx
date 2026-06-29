@@ -9,11 +9,14 @@ import { requestService } from '@/services/requestService';
 import { workerService } from '@/services/workerService';
 import { Banner, BodySm, Button, Card, Field, H2, Row, Stack } from '@/components/ui';
 import { useLocation } from '@/hooks/useLocation';
+import { getLocalizedCategoryName, useLanguage } from '@/i18n';
 import { colors, spacing } from '@/theme';
+import { localizedApiErrorMessage } from '@/utils/localizedErrors';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateRequest'>;
 
 export default function CreateRequestScreen({ route, navigation }: Props) {
+  const { t, language } = useLanguage();
   const [categoryId, setCategoryId] = useState(route.params?.categoryId ?? '');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -31,6 +34,7 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
     () => categories.find(category => category.id === categoryId),
     [categories, categoryId],
   );
+  const selectedCategoryName = selectedCategory ? getLocalizedCategoryName(selectedCategory, language.code, t) : '';
 
   const create = useMutation({
     mutationFn: () => requestService.create({
@@ -47,10 +51,10 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
   });
 
   const getValidationMessage = () => {
-    if (!categoryId) return 'Choose a service category first.';
-    if (title.trim().length < 5) return 'Title must be at least 5 characters.';
-    if (description.trim().length < 10) return 'Description must be at least 10 characters.';
-    if (address.trim().length < 5) return 'Address must be at least 5 characters.';
+    if (!categoryId) return t('requests.create.categoryRequired');
+    if (title.trim().length < 5) return t('requests.create.titleRequired');
+    if (description.trim().length < 10) return t('requests.create.descriptionRequired');
+    if (address.trim().length < 5) return t('requests.create.addressRequired');
     return null;
   };
 
@@ -75,19 +79,19 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <Stack gap={spacing.xs}>
-        <H2>Create request</H2>
-        <BodySm color={colors.textSecondary}>Tell workers what you need and where to come.</BodySm>
+        <H2>{t('requests.create.title')}</H2>
+        <BodySm color={colors.textSecondary}>{t('requests.create.subtitle')}</BodySm>
       </Stack>
 
       {submitError ? <Banner tone="warning" message={submitError} /> : null}
-      {create.isError ? <Banner tone="danger" message={create.error?.message ?? 'Could not create request.'} /> : null}
+      {create.isError ? <Banner tone="danger" message={localizedApiErrorMessage(create.error, t, 'requests.create.failed')} /> : null}
 
       <Card>
         <Stack gap={spacing.md}>
           <Field
-            label="Category"
-            placeholder="Select a category"
-            value={selectedCategory?.name ?? categoryId}
+            label={t('requests.create.category')}
+            placeholder={t('requests.create.selectCategory')}
+            value={selectedCategoryName || categoryId}
             editable={false}
           />
           {categories.length > 0 ? (
@@ -95,7 +99,7 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
               {categories.map(category => (
                 <Button
                   key={category.id}
-                  title={category.name}
+                  title={getLocalizedCategoryName(category, language.code, t)}
                   variant={category.id === categoryId ? 'primary' : 'outline'}
                   size="sm"
                   fullWidth={false}
@@ -107,45 +111,45 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
               ))}
             </Row>
           ) : (
-            <Button title="Browse categories" variant="outline" onPress={() => navigation.navigate('Categories')} />
+            <Button title={t('requests.create.browseCategories')} variant="outline" onPress={() => navigation.navigate('Categories')} />
           )}
 
           <Field
-            label="Title"
-            placeholder="Example: Fix leaking sink"
+            label={t('requests.create.problemTitle')}
+            placeholder={t('requests.create.titlePlaceholder')}
             value={title}
             onChangeText={value => {
               setTitle(value);
               setSubmitError(null);
             }}
-            helperText={title.length > 0 && title.trim().length < 5 ? 'Minimum 5 characters.' : undefined}
+            helperText={title.length > 0 && title.trim().length < 5 ? t('requests.create.minimum5') : undefined}
           />
           <Field
-            label="Description"
-            placeholder="Describe the problem, timing, and any details."
+            label={t('requests.create.description')}
+            placeholder={t('requests.create.descriptionPlaceholder')}
             value={description}
             onChangeText={value => {
               setDescription(value);
               setSubmitError(null);
             }}
-            helperText={description.length > 0 && description.trim().length < 10 ? 'Minimum 10 characters.' : undefined}
+            helperText={description.length > 0 && description.trim().length < 10 ? t('requests.create.minimum10') : undefined}
             multiline
             style={{ minHeight: 84, textAlignVertical: 'top' }}
           />
           <Field
-            label="Address"
-            placeholder="Street, city"
+            label={t('requests.create.address')}
+            placeholder={t('requests.create.addressPlaceholder')}
             value={address}
             onChangeText={value => {
               setAddress(value);
               setSubmitError(null);
             }}
-            helperText={address.length > 0 && address.trim().length < 5 ? 'Minimum 5 characters.' : undefined}
+            helperText={address.length > 0 && address.trim().length < 5 ? t('requests.create.minimum5') : undefined}
           />
 
           <Row gap={spacing.sm}>
             <Button
-              title={location ? 'Location added' : 'Use current location'}
+              title={location ? t('requests.create.locationAdded') : t('requests.create.useCurrentLocation')}
               variant="outline"
               fullWidth={false}
               icon={<Ionicons name="locate-outline" size={16} color={colors.textPrimary} />}
@@ -153,7 +157,7 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
               style={{ flex: 1 }}
             />
             <Button
-              title={image ? 'Image added' : 'Add image'}
+              title={image ? t('requests.create.imageAdded') : t('requests.create.addImage')}
               variant="outline"
               fullWidth={false}
               icon={<Ionicons name="image-outline" size={16} color={colors.textPrimary} />}
@@ -162,8 +166,8 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
             />
           </Row>
 
-          {!canSubmit ? <BodySm color={colors.textSecondary}>Complete category, title, description, and address to submit.</BodySm> : null}
-          <Button title="Submit request" loading={create.isPending} onPress={handleSubmit} />
+          {!canSubmit ? <BodySm color={colors.textSecondary}>{t('requests.create.completeRequired')}</BodySm> : null}
+          <Button title={t('requests.create.submit')} loading={create.isPending} onPress={handleSubmit} />
         </Stack>
       </Card>
     </ScrollView>
