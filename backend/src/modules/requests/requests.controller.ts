@@ -49,7 +49,17 @@ export async function getOne(req: Request, res: Response, next: NextFunction) {
 // GET /api/v1/requests/:id/rating-eligibility
 export async function ratingEligibility(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await reviewsService.getRatingEligibility(req.user!.sub, req.params.id);
+    const result = await reviewsService.getRatingEligibility({ id: req.user!.sub, role: req.user!.role }, req.params.id);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/v1/requests/:id/review
+export async function getReview(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await reviewsService.getRequestReview({ id: req.user!.sub, role: req.user!.role }, req.params.id);
     res.json({ success: true, data: result });
   } catch (err) {
     next(err);
@@ -59,8 +69,8 @@ export async function ratingEligibility(req: Request, res: Response, next: NextF
 // POST /api/v1/requests/:id/reviews
 export async function createReview(req: Request, res: Response, next: NextFunction) {
   try {
-    const review = await reviewsService.createRequestReview(req.user!.sub, req.params.id, req.body);
-    res.status(201).json({ success: true, data: review });
+    const result = await reviewsService.createRequestReview({ id: req.user!.sub, role: req.user!.role }, req.params.id, req.body);
+    res.status(201).json({ success: true, data: result });
   } catch (err) {
     next(err);
   }

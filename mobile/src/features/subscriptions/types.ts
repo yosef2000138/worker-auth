@@ -15,6 +15,7 @@ export type BackendSubscriptionStatus =
   | 'TRIAL'
   | 'GRACE_PERIOD'
   | 'BILLING_ISSUE'
+  | 'CANCELING_AT_PERIOD_END'
   | 'CANCELLED'
   | 'EXPIRED'
   | 'REFUNDED'

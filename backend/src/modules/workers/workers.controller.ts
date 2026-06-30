@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import * as service from './workers.service';
+import * as reviewsService from '../reviews/reviews.service';
 
 // GET /api/v1/workers  — public search
 export async function search(req: Request, res: Response, next: NextFunction) {
@@ -34,6 +35,20 @@ export async function getMyProfile(req: Request, res: Response, next: NextFuncti
 export async function getOne(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await service.getWorker(req.params.id);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/v1/workers/:id/reviews
+export async function getReviews(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await reviewsService.getWorkerReviews(
+      req.params.id,
+      Number(req.query.page ?? 1),
+      Number(req.query.limit ?? 10),
+    );
     res.json({ success: true, data });
   } catch (err) {
     next(err);

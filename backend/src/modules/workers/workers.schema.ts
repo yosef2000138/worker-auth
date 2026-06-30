@@ -51,6 +51,14 @@ export const workerIdParamSchema = z.object({
   params: z.object({ id: z.string().uuid() }),
 });
 
+export const workerReviewsSchema = z.object({
+  params: z.object({ id: z.string().uuid() }),
+  query: z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(10),
+  }),
+});
+
 export type UpdateWorkerProfileInput = z.infer<typeof updateWorkerProfileSchema>['body'];
 export type SetCategoriesInput = z.infer<typeof setCategoriesSchema>['body'];
 export type SetAvailabilityInput = z.infer<typeof setAvailabilitySchema>['body'];

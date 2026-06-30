@@ -200,11 +200,14 @@ model Review {
   rating     Int
   comment    String?
   createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  request  ServiceRequest @relation(fields: [requestId], references: [id])
+  request  ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   reviewer User           @relation("ReviewsGiven", fields: [reviewerId], references: [id])
   reviewee User           @relation("ReviewsReceived", fields: [revieweeId], references: [id])
 
+  @@index([revieweeId, createdAt])
+  @@index([reviewerId, createdAt])
   @@map("reviews")
 }
 

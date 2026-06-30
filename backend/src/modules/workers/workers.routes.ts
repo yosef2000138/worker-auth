@@ -10,6 +10,7 @@ import {
   setCategoriesSchema,
   setAvailabilitySchema,
   toggleAvailabilitySchema,
+  workerReviewsSchema,
 } from './workers.schema';
 
 const router = Router();
@@ -25,6 +26,8 @@ router.put('/me/categories', authenticate, authorize('WORKER'), validate(setCate
 router.put('/me/availability', authenticate, authorize('WORKER'), validate(setAvailabilitySchema), controller.setAvailability);
 router.patch('/me/availability-status', authenticate, authorize('WORKER'), validate(toggleAvailabilitySchema), controller.toggleAvailability);
 router.get('/me/earnings', authenticate, authorize('WORKER'), controller.getEarnings);
+
+router.get('/:id/reviews', validate(workerReviewsSchema), controller.getReviews);
 
 // Dynamic id route must be last.
 router.get('/:id', validate(workerIdParamSchema), controller.getOne);

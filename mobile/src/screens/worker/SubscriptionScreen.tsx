@@ -5,7 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import {
   BackendSubscriptionResponse,
-  SUBSCRIPTION_CONFIG,
+  getWorkerProPrice,
   useWorkerProSubscription,
   WorkerProStatus,
 } from '@/features/subscriptions';
@@ -22,22 +22,13 @@ function backendCopy(status: BackendSubscriptionResponse | undefined, t: (key: T
   return t('subscription.message.backendStatus', { status: getSubscriptionStatusLabel(status.status, t) });
 }
 
-function statusBadge(status: WorkerProStatus | undefined, t: (key: TranslationKey) => string) {
+function statusBadge(status: WorkerProStatus | undefined, t: (key: TranslationKey) => string, backendActive: boolean) {
   if (!status || status.status === 'LOADING') return { label: t('subscription.badge.loading'), tone: 'neutral' as const };
-  if (status.hasAccess) return { label: t('subscription.badge.active'), tone: 'success' as const };
+  if (backendActive) return { label: t('subscription.badge.active'), tone: 'success' as const };
   if (status.status === 'NOT_CONFIGURED') return { label: t('subscription.badge.notConfigured'), tone: 'neutral' as const };
   if (status.status === 'AVAILABLE') return { label: t('subscription.badge.available'), tone: 'brand' as const };
   if (status.status === 'UNAVAILABLE') return { label: t('subscription.badge.unavailable'), tone: 'neutral' as const };
   return { label: t('subscription.badge.error'), tone: 'danger' as const };
-}
-
-function normalizePriceForLocale(price: string, locale: string) {
-  const cleaned = price.replace(/^Planned price:\s*/i, '').replace(/\/month$/i, '').trim();
-  const shekelMatch = cleaned.match(/^₪\s?(.+)$/);
-  if (shekelMatch && (locale === 'ar' || locale === 'he' || locale === 'ru')) {
-    return `${shekelMatch[1]} ₪`;
-  }
-  return cleaned;
 }
 
 function localizedPurchaseMessage(message: string | undefined, t: (key: TranslationKey) => string) {
@@ -59,6 +50,7 @@ function localizedPurchaseMessage(message: string | undefined, t: (key: Translat
 export default function SubscriptionScreen() {
   const { t, locale } = useLanguage();
   const { statusQuery, backendQuery, purchase, restore, refresh } = useWorkerProSubscription();
+  const [verificationState, setVerificationState] = React.useState<'idle' | 'verifying' | 'delayed'>('idle');
 
   useFocusEffect(
     React.useCallback(() => {
@@ -68,20 +60,91 @@ export default function SubscriptionScreen() {
 
   const status = statusQuery.data;
   const workerAccess = backendQuery.data?.workerAccess;
-  const badge = statusBadge(status, t);
+  const backendActive = Boolean(backendQuery.data?.hasAccess || workerAccess?.hasActiveSubscription);
+  const badge = statusBadge(status, t, backendActive);
   const plannedMonthlyPrice = t('subscription.price.monthly', {
-    price: normalizePriceForLocale(SUBSCRIPTION_CONFIG.plannedPriceLabel, locale),
+    price: getWorkerProPrice(locale),
+  });
+  const monthlyPrice = t('subscription.price.monthly', {
+    price: getWorkerProPrice(locale, status?.localizedPrice),
   });
   const displayPrice = status?.localizedPrice
-    ? t('subscription.price.monthly', { price: normalizePriceForLocale(status.localizedPrice, locale) })
-    : t('subscription.price.planned', { price: plannedMonthlyPrice });
+    ? monthlyPrice
+    : plannedMonthlyPrice;
   const usedFreeRequests = workerAccess?.freeRequestsUsed ?? workerAccess?.acceptedRequestCount ?? 0;
   const freeRequestLimit = workerAccess?.freeRequestLimit ?? workerAccess?.freeAcceptedRequestLimit ?? 0;
   const remainingFreeRequests = workerAccess?.freeRequestsRemaining ?? workerAccess?.remainingFreeRequests ?? 0;
   const canAcceptRequest = workerAccess?.canAcceptRequest ?? workerAccess?.canAcceptMoreRequests ?? false;
   const canSubscribe = status?.status === 'AVAILABLE' && Boolean(status.packageToPurchase) && !status.hasAccess;
   const canRestore = Boolean(status?.configured);
-  const busy = purchase.isPending || restore.isPending || statusQuery.isFetching;
+  const backendStatus = backendQuery.data?.status;
+  const needsPaymentUpdate = backendStatus === 'BILLING_ISSUE';
+  const cancelledOrExpired = backendStatus === 'CANCELLED' || backendStatus === 'EXPIRED' || backendStatus === 'REFUNDED';
+  const canOpenManagement = Boolean(status?.managementURL && (backendActive || needsPaymentUpdate));
+  const busy = purchase.isPending || restore.isPending || statusQuery.isFetching || verificationState === 'verifying';
+  const serverStatusLabel = getSubscriptionStatusLabel(backendQuery.data?.status ?? status?.status, t);
+  const primaryTitle = canOpenManagement
+    ? needsPaymentUpdate
+      ? t('subscription.updatePaymentMethod')
+      : t('subscription.manage')
+    : verificationState === 'verifying'
+    ? t('subscription.verifying')
+    : verificationState === 'delayed'
+    ? t('subscription.retryVerification')
+    : purchase.isError || needsPaymentUpdate
+    ? t('subscription.retryPayment')
+    : cancelledOrExpired
+    ? t('subscription.reactivate')
+    : backendActive
+    ? t('subscription.activeButton')
+    : t('subscription.subscribeForPrice', { price: monthlyPrice });
+  const primaryDisabled = busy || (
+    verificationState !== 'delayed' &&
+    !canOpenManagement &&
+    !canSubscribe
+  );
+
+  React.useEffect(() => {
+    if (backendActive) setVerificationState('idle');
+  }, [backendActive]);
+
+  const verifyBackendAccess = React.useCallback(async () => {
+    setVerificationState('verifying');
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const result = await backendQuery.refetch();
+      const access = result.data?.workerAccess;
+      if (result.data?.hasAccess || access?.hasActiveSubscription) {
+        setVerificationState('idle');
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1800));
+    }
+    setVerificationState('delayed');
+  }, [backendQuery]);
+
+  const handlePrimaryAction = () => {
+    if (verificationState === 'delayed') {
+      void verifyBackendAccess();
+      return;
+    }
+    if (canOpenManagement && status?.managementURL) {
+      Linking.openURL(status.managementURL).catch(() => {});
+      return;
+    }
+    purchase.mutate(undefined, {
+      onSuccess: result => {
+        if (!result.cancelled) void verifyBackendAccess();
+      },
+    });
+  };
+
+  const handleRestore = () => {
+    restore.mutate(undefined, {
+      onSuccess: result => {
+        if (!result.cancelled) void verifyBackendAccess();
+      },
+    });
+  };
 
   if (statusQuery.isLoading) {
     return <ScrollView style={styles.root} contentContainerStyle={styles.content}><ListSkeleton count={4} /></ScrollView>;
@@ -98,6 +161,7 @@ export default function SubscriptionScreen() {
           <Stack gap={spacing.sm} style={{ flex: 1 }}>
             <Badge label={badge.label} tone={badge.tone} />
             <H2>{t('subscription.title')}</H2>
+            <Body>{t('subscription.planDescription')}</Body>
             <Body weight="bold">{displayPrice}</Body>
             <BodySm color={colors.textSecondary}>
               {status?.localizedPrice
@@ -121,6 +185,9 @@ export default function SubscriptionScreen() {
         />
       ) : null}
       {restore.data ? <Banner tone={restore.data.hasAccess ? 'success' : 'warning'} message={restore.data.hasAccess ? t('subscription.message.restored') : t('subscription.message.restoreNone')} /> : null}
+      {verificationState === 'verifying' ? <Banner tone="warning" message={t('subscription.verifyingMessage')} /> : null}
+      {verificationState === 'delayed' ? <Banner tone="warning" message={t('subscription.verificationDelayed')} /> : null}
+      {backendActive && canAcceptRequest ? <Banner tone="success" message={t('subscription.activeSuccess')} /> : null}
 
       <Card>
         <Stack gap={spacing.md}>
@@ -140,8 +207,12 @@ export default function SubscriptionScreen() {
             <BodySm weight="bold">{status?.status ?? t('common.unknown')}</BodySm>
           </Row>
           <Row justify="space-between">
+            <BodySm color={colors.textSecondary}>{t('subscription.backendStatus')}</BodySm>
+            <BodySm weight="bold">{serverStatusLabel}</BodySm>
+          </Row>
+          <Row justify="space-between">
             <BodySm color={colors.textSecondary}>{t('subscription.access')}</BodySm>
-            <BodySm weight="bold">{status?.hasAccess ? t('common.active') : t('common.inactive')}</BodySm>
+            <BodySm weight="bold">{backendActive ? t('common.active') : t('common.inactive')}</BodySm>
           </Row>
           {status?.expirationDate ? (
             <Row justify="space-between">
@@ -161,12 +232,12 @@ export default function SubscriptionScreen() {
           ) : workerAccess ? (
             <>
               <Row justify="space-between">
-                <BodySm color={colors.textSecondary}>{t('subscription.acceptedRequests')}</BodySm>
-                <BodySm weight="bold">{usedFreeRequests}</BodySm>
+                <BodySm color={colors.textSecondary}>{t('subscription.freeUsed')}</BodySm>
+                <BodySm weight="bold">{t('subscription.freeUsedValue', { used: usedFreeRequests, limit: freeRequestLimit })}</BodySm>
               </Row>
               <Row justify="space-between">
                 <BodySm color={colors.textSecondary}>{t('subscription.freeRemaining')}</BodySm>
-                <BodySm weight="bold">{remainingFreeRequests} / {freeRequestLimit}</BodySm>
+                <BodySm weight="bold">{remainingFreeRequests}</BodySm>
               </Row>
               <Row justify="space-between">
                 <BodySm color={colors.textSecondary}>{t('subscription.nextAcceptance')}</BodySm>
@@ -182,18 +253,21 @@ export default function SubscriptionScreen() {
       <Card>
         <Stack gap={spacing.md}>
           <H3>{t('common.actions')}</H3>
+          <BodySm color={colors.textSecondary}>
+            {t('subscription.recurringDisclosure', { price: monthlyPrice })}
+          </BodySm>
           <Button
-            title={status?.hasAccess ? t('subscription.activeButton') : t('subscription.subscribe')}
+            title={primaryTitle}
             loading={purchase.isPending}
-            disabled={!canSubscribe || busy}
-            onPress={() => purchase.mutate()}
+            disabled={primaryDisabled}
+            onPress={handlePrimaryAction}
           />
           <Button
             title={t('subscription.restore')}
             variant="outline"
             loading={restore.isPending}
             disabled={!canRestore || busy}
-            onPress={() => restore.mutate()}
+            onPress={handleRestore}
           />
           {status?.managementURL ? (
             <Button

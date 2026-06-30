@@ -56,6 +56,10 @@ export default function WorkerProfileScreen({ route, navigation }: Props) {
     : worker?.fixedPrice != null
     ? `${formatCurrency(worker.fixedPrice, locale)} ${t('common.fixed')}`
     : null;
+  const reviewCount = worker?.totalReviews ?? worker?.ratingCount ?? 0;
+  const ratingLabel = reviewCount > 0 && worker?.ratingAvg != null
+    ? worker.ratingAvg.toFixed(1)
+    : t('reviews.newWorker');
   const primaryCategoryId = categories[0]?.id;
   const openRequest = () => navigation.navigate(
     'CreateRequest',
@@ -84,7 +88,7 @@ export default function WorkerProfileScreen({ route, navigation }: Props) {
             </Row>
             <RatingStars
               rating={worker.ratingAvg ?? 0}
-              count={worker.totalReviews ?? worker.ratingCount ?? 0}
+              count={reviewCount}
             />
             <Row gap={spacing.sm} wrap>
               {worker.isAvailable ? <Badge label={t('customer.workerProfile.availableNow')} tone="success" /> : <Badge label={t('common.unavailable')} tone="neutral" />}
@@ -104,7 +108,7 @@ export default function WorkerProfileScreen({ route, navigation }: Props) {
         <Row justify="space-around">
           {[
             { icon: 'briefcase-outline' as const, value: `${worker.totalJobs ?? 0}`, label: t('customer.workerProfile.jobsDone') },
-            { icon: 'star-outline' as const, value: (worker.ratingAvg ?? 0).toFixed(1), label: t('customer.workerProfile.rating') },
+            { icon: 'star-outline' as const, value: ratingLabel, label: t('customer.workerProfile.rating') },
             { icon: 'time-outline' as const, value: t('customer.workerProfile.yearsShort', { count: worker.yearsExp ?? 0 }), label: t('customer.workerProfile.experience') },
           ].map(stat => (
             <Stack key={stat.label} gap={2} style={{ alignItems: 'center' }}>

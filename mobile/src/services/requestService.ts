@@ -7,8 +7,8 @@ import {
   RatingEligibility,
   RequestStatus,
   RequestStatusUpdateResult,
-  Review,
   ServiceRequest,
+  CreateReviewResponse,
 } from '@/types';
 export type CreateRequestPayload = { categoryId: string; title: string; description: string; lat: number; lng: number; address: string; scheduledAt?: string; paymentMethod: PaymentMethod; images?: { uri: string; name?: string; type?: string }[] };
 export type RequestStatusUpdate = Exclude<RequestStatus, 'PENDING'>;
@@ -32,7 +32,7 @@ export const requestService = {
   cancel: (id: string, reason?: string) => api.post(`/requests/${id}/cancel`, { reason }).then(unwrap<ServiceRequest>),
   ratingEligibility: (requestId: string) => api.get(`/requests/${requestId}/rating-eligibility`).then(unwrap<RatingEligibility>),
   submitReview: (requestId: string, payload: { rating: number; comment?: string }) =>
-    api.post(`/requests/${requestId}/reviews`, payload).then(unwrap<Review>),
+    api.post(`/requests/${requestId}/reviews`, payload).then(unwrap<CreateReviewResponse>),
   messages: (requestId: string, params?: { before?: string; limit?: number }) => api.get(`/messages/${requestId}`, { params }).then(unwrap<Message[]>),
   sendMessage: (requestId: string, content: string) => api.post(`/messages/${requestId}`, { content }).then(unwrap<Message>),
   markRead: (requestId: string) => api.patch(`/messages/${requestId}/read`).then(r => r.data),

@@ -134,6 +134,7 @@ export function Button({
       disabled={loading || disabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? title}
+      accessibilityState={{ busy: Boolean(loading), disabled: Boolean(loading || disabled) }}
     >
       {loading ? <ActivityIndicator color={textColor} /> : (
         <Row gap={spacing.xs} justify="center">

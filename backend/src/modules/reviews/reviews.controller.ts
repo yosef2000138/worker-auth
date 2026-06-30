@@ -4,7 +4,7 @@ import * as service from './reviews.service';
 // POST /api/v1/reviews
 export async function createReview(req: Request, res: Response, next: NextFunction) {
   try {
-    const data = await service.createReview(req.user!.sub, req.body);
+    const data = await service.createReview({ id: req.user!.sub, role: req.user!.role }, req.body);
     res.status(201).json({ success: true, data });
   } catch (err) {
     next(err);

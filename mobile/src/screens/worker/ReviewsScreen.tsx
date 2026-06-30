@@ -4,12 +4,44 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { workerService } from '@/services/workerService';
 import { Avatar, Body, BodySm, Button, Card, EmptyState, ErrorState, H2, ListSkeleton, Row, Screen, Stack } from '@/components/ui';
 import { RatingStars } from '@/components/ui/Rating';
-import { Paginated, Review } from '@/types';
+import { Review, WorkerReviewsResponse } from '@/types';
 import { colors, spacing } from '@/theme';
 import { formatAppDate, getLocalizedCategoryName, useLanguage } from '@/i18n';
 
-function getItems(data?: Paginated<Review>) {
+function getItems(data?: WorkerReviewsResponse | Review[]) {
   return Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
+}
+
+function RatingDistribution({
+  distribution,
+  total,
+}: {
+  distribution?: WorkerReviewsResponse['ratingDistribution'];
+  total: number;
+}) {
+  const { t } = useLanguage();
+  if (!distribution || total <= 0) return null;
+
+  return (
+    <Card>
+      <Stack gap={spacing.sm}>
+        <Body weight="bold">{t('reviews.ratingDistribution')}</Body>
+        {[5, 4, 3, 2, 1].map(star => {
+          const count = distribution[String(star) as keyof typeof distribution] ?? 0;
+          const percent = total > 0 ? (count / total) * 100 : 0;
+          return (
+            <Row key={star} gap={spacing.sm}>
+              <BodySm style={styles.starLabel}>{star}</BodySm>
+              <View style={styles.distributionTrack}>
+                <View style={[styles.distributionFill, { width: `${percent}%` }]} />
+              </View>
+              <BodySm color={colors.textSecondary} style={styles.distributionCount}>{count}</BodySm>
+            </Row>
+          );
+        })}
+      </Stack>
+    </Card>
+  );
 }
 
 export default function ReviewsScreen() {
@@ -28,12 +60,16 @@ export default function ReviewsScreen() {
     },
   });
   const reviews = reviewsQuery.data?.pages.flatMap(page => getItems(page)) ?? [];
+  const summary = reviewsQuery.data?.pages[0];
+  const reviewCount = summary?.reviewCount ?? workerQuery.data?.totalReviews ?? 0;
+  const averageRating = summary?.averageRating ?? workerQuery.data?.ratingAvg ?? 0;
 
   return (
     <Screen padded={false}>
       <View style={styles.header}>
-        <H2>{t('nav.reviews')}</H2>
-        <RatingStars rating={workerQuery.data?.ratingAvg ?? 0} count={workerQuery.data?.totalReviews ?? 0} />
+        <H2>{t('reviews.customerReviews')}</H2>
+        <RatingStars rating={averageRating ?? 0} count={reviewCount} />
+        <BodySm color={colors.textSecondary}>{t('reviews.basedOn', { count: reviewCount })}</BodySm>
       </View>
       {workerQuery.isLoading || reviewsQuery.isLoading ? (
         <View style={styles.list}><ListSkeleton count={3} /></View>
@@ -46,6 +82,7 @@ export default function ReviewsScreen() {
           data={reviews}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
+          ListHeaderComponent={<RatingDistribution distribution={summary?.ratingDistribution} total={reviewCount} />}
           ListFooterComponent={reviewsQuery.hasNextPage ? (
             <Button
               title={t('common.loadMore')}
@@ -93,4 +130,18 @@ export default function ReviewsScreen() {
 const styles = StyleSheet.create({
   header: { padding: spacing.lg, gap: spacing.sm },
   list: { padding: spacing.lg, paddingBottom: spacing['4xl'] },
+  starLabel: { width: 18, textAlign: 'center' },
+  distributionTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+  },
+  distributionFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: colors.warning,
+  },
+  distributionCount: { width: 28, textAlign: 'right' },
 });

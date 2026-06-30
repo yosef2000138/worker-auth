@@ -76,6 +76,8 @@ export type ServiceRequest = {
   updatedAt?: string;
   worker?: WorkerProfile | null;
   customer?: User;
+  review?: Review | null;
+  canReview?: boolean;
 };
 
 export type Message = { id: string; requestId: string; senderId: string; content: string; readAt?: string | null; createdAt: string; sender?: User };
@@ -87,10 +89,35 @@ export type Review = {
   rating: number;
   comment?: string | null;
   createdAt?: string;
+  updatedAt?: string;
   customer?: User;
   reviewer?: User;
   reviewee?: User;
   request?: Pick<ServiceRequest, 'id' | 'title' | 'category'>;
+};
+export type RatingDistribution = Record<'1' | '2' | '3' | '4' | '5', number>;
+export type WorkerRatingSummary = {
+  averageRating: number | null;
+  reviewCount: number;
+  ratingDistribution: RatingDistribution;
+};
+export type CreateReviewResponse = {
+  review: Review;
+  workerRating: WorkerRatingSummary;
+};
+export type WorkerReviewsResponse = {
+  items?: Review[];
+  data?: Review[];
+  pagination?: Pagination;
+  total?: number;
+  page?: number;
+  limit?: number;
+  pages?: number;
+  averageRating?: number | null;
+  reviewCount?: number;
+  ratingDistribution?: RatingDistribution;
+  ratingAvg?: number | null;
+  totalReviews?: number;
 };
 export type Payment = { id: string; requestId: string; amount: number | string; status?: string; method?: PaymentMethod; currency?: string; createdAt?: string; request?: Pick<ServiceRequest, 'id' | 'title' | 'updatedAt'> };
 export type WorkerAccessReasonCode =

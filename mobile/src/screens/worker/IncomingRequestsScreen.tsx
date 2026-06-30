@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { requestService } from '@/services/requestService';
+import { WorkerProRequiredModal } from '@/components/subscriptions/WorkerProRequiredModal';
 import {
   BackendSubscriptionResponse,
   backendSubscriptionQueryKey,
@@ -32,13 +34,22 @@ function canAcceptFromAccess(access?: WorkerAcceptanceAccess) {
   const used = access.freeRequestsUsed ?? access.acceptedRequestCount;
   const limit = access.freeRequestLimit ?? access.freeAcceptedRequestLimit;
   const hasActiveSubscription = access.hasActiveSubscription ?? access.hasSubscriptionAccess;
-  return used < limit || hasActiveSubscription;
+  if (typeof used === 'number' && typeof limit === 'number') return used < limit || Boolean(hasActiveSubscription);
+  return Boolean(hasActiveSubscription);
 }
 
 function workerAccessFromError(error: unknown) {
   if (typeof error !== 'object' || error === null || !('details' in error)) return null;
   const details = (error as { details?: unknown }).details;
-  if (typeof details !== 'object' || details === null || !('freeAcceptedRequestLimit' in details)) return null;
+  if (typeof details !== 'object' || details === null) return null;
+  if (
+    !('freeAcceptedRequestLimit' in details) &&
+    !('freeRequestLimit' in details) &&
+    !('canAcceptRequest' in details) &&
+    !('canAcceptMoreRequests' in details)
+  ) {
+    return null;
+  }
   return details as WorkerAcceptanceAccess;
 }
 
@@ -49,6 +60,7 @@ export default function IncomingRequestsScreen() {
   const user = useAuthStore(s => s.user);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: 'success' | 'warning'; message: string } | null>(null);
+  const [paywallVisible, setPaywallVisible] = useState(false);
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['incoming'],
     queryFn: () => requestService.list({ status: 'PENDING', limit: 30 }),
@@ -98,9 +110,10 @@ export default function IncomingRequestsScreen() {
         if (workerAccess) {
           updateCachedWorkerAccess(queryClient, user?.id, workerAccess);
         }
+        void backendAccessQuery.refetch();
         queryClient.invalidateQueries({ queryKey: backendSubscriptionQueryKey(user?.id) });
         setNotice({ tone: 'warning', message: t('errors.workerProRequired') });
-        navigation.navigate('Subscription');
+        setPaywallVisible(true);
       }
     },
     onSettled: () => setAcceptingId(null),
@@ -114,7 +127,7 @@ export default function IncomingRequestsScreen() {
   const openWorkerPro = () => {
     queryClient.invalidateQueries({ queryKey: backendSubscriptionQueryKey(user?.id) });
     queryClient.invalidateQueries({ queryKey: workerProQueryKey(user?.id) });
-    setNotice({ tone: 'warning', message: t('errors.workerProRequired') });
+    setPaywallVisible(false);
     navigation.navigate('Subscription');
   };
   const handleAccept = (requestId: string) => {
@@ -123,12 +136,18 @@ export default function IncomingRequestsScreen() {
       latestWorkerAccess;
 
     if (cachedAccess && !canAcceptFromAccess(cachedAccess)) {
-      openWorkerPro();
+      setNotice(null);
+      setPaywallVisible(true);
       return;
     }
 
     accept.mutate(requestId);
   };
+  const acceptBlocked = latestWorkerAccess ? !canAcceptFromAccess(latestWorkerAccess) : false;
+  const acceptErrorCode = accept.isError && typeof accept.error === 'object' && accept.error !== null && 'code' in accept.error
+    ? String(accept.error.code)
+    : '';
+  const showAcceptError = accept.isError && acceptError && acceptErrorCode !== 'WORKER_SUBSCRIPTION_REQUIRED' && acceptErrorCode !== 'WORKER_PRO_REQUIRED';
 
   return (
     <Screen padded={false}>
@@ -136,7 +155,7 @@ export default function IncomingRequestsScreen() {
         <H2>{t('worker.requests.title')}</H2>
         <BodySm color={colors.textSecondary}>{t('worker.requests.pendingNear', { count: items.length })}</BodySm>
         {notice ? <Banner tone={notice.tone} message={notice.message} /> : null}
-        {accept.isError && acceptError ? <Banner tone="danger" message={acceptError} /> : null}
+        {showAcceptError ? <Banner tone="danger" message={acceptError} /> : null}
       </View>
       {isLoading ? (
         <View style={styles.list}><ListSkeleton count={4} /></View>
@@ -185,11 +204,13 @@ export default function IncomingRequestsScreen() {
                     })}
                   />
                   <Button
-                    title={t('worker.requests.accept')}
+                    title={acceptBlocked ? t('subscription.subscribeToAccept') : t('worker.requests.accept')}
                     fullWidth={false}
                     style={styles.requestAction}
+                    icon={acceptBlocked ? <Ionicons name="lock-closed-outline" size={16} color={colors.textInverse} /> : undefined}
                     loading={acceptingId === item.id}
                     disabled={accept.isPending && acceptingId !== item.id}
+                    accessibilityLabel={acceptBlocked ? t('subscription.subscribeToAcceptA11y') : t('worker.requests.accept')}
                     onPress={() => handleAccept(item.id)}
                   />
                 </Row>
@@ -198,6 +219,12 @@ export default function IncomingRequestsScreen() {
           )}
         />
       )}
+      <WorkerProRequiredModal
+        visible={paywallVisible}
+        access={latestWorkerAccess}
+        onClose={() => setPaywallVisible(false)}
+        onViewWorkerPro={openWorkerPro}
+      />
     </Screen>
   );
 }

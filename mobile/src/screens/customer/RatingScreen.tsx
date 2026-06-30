@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { reviewService } from '@/services/reviewService';
-import type { RootStackParamList } from '@/types';
+import type { RatingEligibility, RootStackParamList, ServiceRequest } from '@/types';
 import { Avatar, Banner, Body, BodySm, Button, Card, EmptyState, Field, H2, H3, Row, Stack } from '@/components/ui';
 import { colors, radius, spacing } from '@/theme';
 import { formatAppDate, getLocalizedCategoryName, useLanguage } from '@/i18n';
@@ -24,8 +24,9 @@ export default function RatingScreen({ route, navigation }: Props) {
   const { requestId } = route.params;
   const { t, locale, language } = useLanguage();
   const queryClient = useQueryClient();
-  const [rating, setRating] = React.useState(5);
+  const [rating, setRating] = React.useState<number | null>(null);
   const [comment, setComment] = React.useState('');
+  const [duplicateNotice, setDuplicateNotice] = React.useState(false);
 
   const eligibilityQuery = useQuery({
     queryKey: ['rating-eligibility', requestId],
@@ -35,22 +36,47 @@ export default function RatingScreen({ route, navigation }: Props) {
 
   const submit = useMutation({
     mutationFn: () => reviewService.createForRequest(requestId, {
-      rating,
+      rating: rating ?? 0,
       comment: comment.trim() || undefined,
     }),
-    onSuccess: () => {
+    onMutate: () => {
+      setDuplicateNotice(false);
+    },
+    onSuccess: (result) => {
+      const review = result.review;
+      queryClient.setQueryData<RatingEligibility | undefined>(
+        ['rating-eligibility', requestId],
+        current => current ? { ...current, alreadyRated: true, canRate: false, review } : current,
+      );
+      queryClient.setQueryData<ServiceRequest | undefined>(
+        ['request', requestId],
+        current => current ? { ...current, canReview: false, review } : current,
+      );
       queryClient.invalidateQueries({ queryKey: ['request', requestId] });
       queryClient.invalidateQueries({ queryKey: ['rating-eligibility', requestId] });
       queryClient.invalidateQueries({ queryKey: ['requests'] });
+      if (worker?.id) {
+        queryClient.invalidateQueries({ queryKey: ['worker-reviews', worker.id] });
+        queryClient.invalidateQueries({ queryKey: ['reviews', worker.id] });
+        queryClient.invalidateQueries({ queryKey: ['worker', worker.id] });
+      }
+    },
+    onError: (error) => {
+      const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+      if (code === 'REVIEW_ALREADY_EXISTS') {
+        setDuplicateNotice(true);
+        queryClient.invalidateQueries({ queryKey: ['request', requestId] });
+        void eligibilityQuery.refetch();
+      }
     },
   });
 
   const eligibility = eligibilityQuery.data;
   const worker = eligibility?.worker;
   const request = eligibility?.request;
-  const existingReview = submit.data ?? eligibility?.review ?? null;
+  const existingReview = submit.data?.review ?? eligibility?.review ?? null;
   const canRate = Boolean(eligibility?.canRate && !submit.data);
-  const selectedLabel = t(ratingLabels[rating - 1]);
+  const selectedLabel = rating ? t(ratingLabels[rating - 1]) : t('rating.selectRating');
 
   if (eligibilityQuery.isLoading) {
     return (
@@ -89,7 +115,8 @@ export default function RatingScreen({ route, navigation }: Props) {
       </Stack>
 
       {submit.isSuccess ? <Banner message={t('rating.submitted')} /> : null}
-      {submit.isError ? <Banner tone="danger" message={localizedApiErrorMessage(submit.error, t, 'rating.submitFailed')} /> : null}
+      {duplicateNotice ? <Banner tone="warning" message={t('rating.duplicateHandled')} /> : null}
+      {submit.isError && !duplicateNotice ? <Banner tone="danger" message={localizedApiErrorMessage(submit.error, t, 'rating.submitFailed')} /> : null}
 
       <Card>
         <Row gap={spacing.md} align="center">
@@ -118,7 +145,7 @@ export default function RatingScreen({ route, navigation }: Props) {
             <View style={styles.successIcon}>
               <Ionicons name="checkmark" size={28} color={colors.textInverse} />
             </View>
-            <H3 center>{t('rating.alreadyRatedTitle')}</H3>
+            <H3 center>{t('rating.yourReview')}</H3>
             <Row justify="center" gap={spacing.xs}>
               {[1, 2, 3, 4, 5].map(i => (
                 <Ionicons
@@ -135,6 +162,7 @@ export default function RatingScreen({ route, navigation }: Props) {
             {existingReview.createdAt ? (
               <BodySm center color={colors.textTertiary}>{formatAppDate(existingReview.createdAt, locale)}</BodySm>
             ) : null}
+            <BodySm center color={colors.textSecondary}>{t('rating.onceFinal')}</BodySm>
             <Button title={t('common.done')} onPress={() => navigation.goBack()} />
           </Stack>
         </Card>
@@ -159,7 +187,7 @@ export default function RatingScreen({ route, navigation }: Props) {
           <Stack gap={spacing.lg}>
             <Stack gap={spacing.xs}>
               <H3>{t('rating.question')}</H3>
-              <BodySm color={colors.textSecondary}>{t('rating.helpText')}</BodySm>
+              <BodySm color={colors.textSecondary}>{t('rating.selectRating')}</BodySm>
             </Stack>
 
             <View style={styles.starRow}>
@@ -170,9 +198,10 @@ export default function RatingScreen({ route, navigation }: Props) {
                   onPress={() => setRating(i)}
                   accessibilityRole="button"
                   accessibilityLabel={t('common.ratingOutOfFive', { rating: i })}
+                  accessibilityState={{ selected: rating === i }}
                 >
                   <Ionicons
-                    name={i <= rating ? 'star' : 'star-outline'}
+                    name={rating !== null && i <= rating ? 'star' : 'star-outline'}
                     size={34}
                     color={colors.warning}
                   />
@@ -180,26 +209,27 @@ export default function RatingScreen({ route, navigation }: Props) {
               ))}
             </View>
             <Body center weight="bold" color={colors.brand}>{selectedLabel}</Body>
+            <BodySm center color={colors.textSecondary}>{t('rating.helpText')}</BodySm>
 
             <Field
-              label={t('rating.commentLabel')}
+              label={t('rating.feedbackLabel')}
               placeholder={t('rating.commentPlaceholder')}
               value={comment}
               onChangeText={setComment}
               multiline
               maxLength={1000}
-              helperText={t('rating.commentCount', { count: comment.length })}
+              helperText={`${t('rating.feedbackOptional')} · ${t('rating.commentCount', { count: comment.length })}`}
               style={styles.commentInput}
             />
 
             <Button
-              title={t('rating.submit')}
+              title={submit.isPending ? t('rating.submitting') : t('rating.submit')}
               loading={submit.isPending}
-              disabled={!canRate || submit.isPending}
+              disabled={!canRate || !rating || submit.isPending}
               onPress={() => submit.mutate()}
             />
             <Button
-              title={t('common.cancel')}
+              title={t('rating.notNow')}
               variant="ghost"
               disabled={submit.isPending}
               onPress={() => navigation.goBack()}

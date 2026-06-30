@@ -6,7 +6,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Paginated, RootStackParamList, ServiceRequest } from '@/types';
 import { requestService } from '@/services/requestService';
 import { workerService } from '@/services/workerService';
-import { BackendSubscriptionResponse, backendSubscriptionQueryKey, subscriptionApi, SUBSCRIPTION_CONFIG } from '@/features/subscriptions';
+import { BackendSubscriptionResponse, backendSubscriptionQueryKey, getWorkerProPrice, subscriptionApi } from '@/features/subscriptions';
 import { useAuthStore } from '@/store/authStore';
 import { Avatar, Badge, Body, BodySm, Button, Card, EmptyState, ErrorState, H2, ListSkeleton, Row, Screen, Stack, StatusBadge } from '@/components/ui';
 import { formatAppDate, useLanguage } from '@/i18n';
@@ -22,13 +22,6 @@ function getItems(data?: Paginated<ServiceRequest>) {
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
-}
-
-function normalizePriceForLocale(price: string, locale: string) {
-  const cleaned = price.replace(/^Planned price:\s*/i, '').replace(/\/month$/i, '').trim();
-  const shekelMatch = cleaned.match(/^₪\s?(.+)$/);
-  if (shekelMatch && (locale === 'ar' || locale === 'he' || locale === 'ru')) return `${shekelMatch[1]} ₪`;
-  return cleaned;
 }
 
 function SubscriptionSummaryCard({
@@ -47,9 +40,10 @@ function SubscriptionSummaryCard({
   const used = access?.freeRequestsUsed ?? access?.acceptedRequestCount ?? 0;
   const limit = access?.freeRequestLimit ?? access?.freeAcceptedRequestLimit ?? 0;
   const remaining = access?.freeRequestsRemaining ?? access?.remainingFreeRequests ?? 0;
-  const plannedMonthlyPrice = t('subscription.price.monthly', {
-    price: normalizePriceForLocale(SUBSCRIPTION_CONFIG.plannedPriceLabel, locale),
+  const monthlyPrice = t('subscription.price.monthly', {
+    price: getWorkerProPrice(locale),
   });
+  const exhausted = Boolean(access) && remaining <= 0 && !access?.hasActiveSubscription && !status.hasAccess;
 
   if (status.hasAccess) {
     return (
@@ -79,18 +73,27 @@ function SubscriptionSummaryCard({
   }
 
   return (
-    <Card>
+    <Card style={exhausted ? styles.proLimitCard : undefined}>
       <Stack gap={spacing.sm}>
         <Row justify="space-between">
           <Badge label={t('subscription.title')} tone={status.enabled ? 'brand' : 'neutral'} />
-          <BodySm color={colors.textSecondary}>{t('subscription.price.planned', { price: plannedMonthlyPrice })}</BodySm>
+          <BodySm color={colors.textSecondary}>{monthlyPrice}</BodySm>
         </Row>
-        <Body weight="bold">{status.enabled ? t('worker.dashboard.proAvailable') : t('worker.dashboard.proNotConfigured')}</Body>
+        <Body weight="bold">
+          {exhausted
+            ? t('worker.dashboard.freeLimitReached')
+            : status.enabled
+            ? t('worker.dashboard.proAvailable')
+            : t('worker.dashboard.proNotConfigured')}
+        </Body>
         <BodySm color={colors.textSecondary}>
-          {access
+          {exhausted
+            ? t('worker.dashboard.subscribeToContinue')
+            : access
             ? t('subscription.freeUsageSummary', { used, limit, remaining })
             : t('worker.dashboard.normalAvailable')}
         </BodySm>
+        {exhausted ? <BodySm weight="bold">{monthlyPrice}</BodySm> : null}
         <Button title={t('worker.dashboard.viewPro')} variant="outline" size="sm" onPress={onPress} />
       </Stack>
     </Card>
@@ -187,4 +190,5 @@ const styles = StyleSheet.create({
   header: { padding: spacing.lg, gap: spacing.md },
   list: { padding: spacing.lg, paddingBottom: spacing['4xl'] },
   quickAction: { flexBasis: '31%', flexGrow: 1 },
+  proLimitCard: { borderColor: colors.warning, backgroundColor: colors.warningSoft },
 });

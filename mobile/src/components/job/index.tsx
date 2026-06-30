@@ -164,6 +164,7 @@ export function PersonSummaryCard({
   actions?: PersonAction[];
 }) {
   const { isRTL, plural, t } = useLanguage();
+  const reviewCount = worker?.totalReviews ?? worker?.ratingCount ?? 0;
 
   if (!user) return null;
 
@@ -180,19 +181,19 @@ export function PersonSummaryCard({
                 <Ionicons name="shield-checkmark" size={16} color={colors.success} accessibilityLabel={t('jobs.details.verified')} />
               ) : null}
             </Row>
-            {worker?.ratingAvg != null ? (
+            {reviewCount > 0 && worker?.ratingAvg != null ? (
               <Row gap={spacing.xs}>
                 <Ionicons name="star" size={14} color={colors.warning} />
                 <BodySm color={colors.textSecondary}>
                   {Number(worker.ratingAvg).toFixed(1)}
-                  {worker.ratingCount ? ` (${plural({
+                  {` (${plural({
                     zero: 'reviews.count.zero',
                     one: 'reviews.count.one',
                     two: 'reviews.count.two',
                     few: 'reviews.count.few',
                     many: 'reviews.count.many',
                     other: 'reviews.count.other',
-                  }, worker.ratingCount)})` : ''}
+                  }, reviewCount)})`}
                 </BodySm>
               </Row>
             ) : null}

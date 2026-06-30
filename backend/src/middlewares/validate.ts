@@ -21,6 +21,11 @@ export function validate(schema: ZodSchema) {
         res.status(422).json({
           success: false,
           message: 'Validation failed',
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Validation failed',
+            details: errors,
+          },
           errors,
         });
         return;

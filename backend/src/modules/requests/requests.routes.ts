@@ -42,6 +42,13 @@ router.get(
   controller.ratingEligibility,
 );
 
+router.get(
+  '/:id/review',
+  authorize('CUSTOMER'),
+  validate(idParamSchema),
+  controller.getReview,
+);
+
 router.post(
   '/:id/reviews',
   authorize('CUSTOMER'),

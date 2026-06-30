@@ -111,8 +111,9 @@ export default function RequestDetailsScreen({ route, navigation }: Props) {
   const canCall = Boolean(request.worker?.user?.phone);
   const canCancel = ['PENDING', 'ACCEPTED', 'ON_THE_WAY'].includes(request.status);
   const ratingEligibility = ratingEligibilityQuery.data;
-  const canReview = request.status === 'COMPLETED' && Boolean(ratingEligibility?.canRate);
-  const alreadyRated = request.status === 'COMPLETED' && Boolean(ratingEligibility?.alreadyRated);
+  const submittedReview = ratingEligibility?.review ?? request.review ?? null;
+  const canReview = request.status === 'COMPLETED' && Boolean(ratingEligibility?.canRate ?? request.canReview);
+  const alreadyRated = request.status === 'COMPLETED' && Boolean(ratingEligibility?.alreadyRated || submittedReview);
   const isTerminal = request.status === 'COMPLETED' || request.status === 'CANCELLED';
   const busy = cancel.isPending;
 
@@ -245,20 +246,27 @@ export default function RequestDetailsScreen({ route, navigation }: Props) {
       {alreadyRated ? (
         <Card>
           <Stack gap={spacing.md}>
-            <H3>{t('rating.alreadyRatedTitle')}</H3>
+            <H3>{t('rating.yourReview')}</H3>
             <BodySm color={colors.textSecondary}>{t('rating.alreadyRatedMessage')}</BodySm>
-            {ratingEligibility?.review?.rating ? (
+            {submittedReview?.rating ? (
               <Row gap={spacing.xs}>
                 {[1, 2, 3, 4, 5].map(i => (
                   <Ionicons
                     key={i}
-                    name={i <= (ratingEligibility.review?.rating ?? 0) ? 'star' : 'star-outline'}
+                    name={i <= (submittedReview.rating ?? 0) ? 'star' : 'star-outline'}
                     size={22}
                     color={colors.warning}
                   />
                 ))}
               </Row>
             ) : null}
+            {submittedReview?.comment ? (
+              <BodySm color={colors.textSecondary}>{submittedReview.comment}</BodySm>
+            ) : null}
+            {submittedReview?.createdAt ? (
+              <BodySm color={colors.textTertiary}>{formatAppDate(submittedReview.createdAt, locale)}</BodySm>
+            ) : null}
+            <BodySm color={colors.textSecondary}>{t('rating.onceFinal')}</BodySm>
           </Stack>
         </Card>
       ) : null}

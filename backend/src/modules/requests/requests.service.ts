@@ -6,6 +6,7 @@ import {
   getWorkerAcceptanceAccess,
   WorkerAcceptanceAccess,
 } from '../subscriptions/subscriptions.service';
+import { requestReviewSelect } from '../reviews/reviews.service';
 
 // ─── FSM ─────────────────────────────────────────────────────────────────────
 type Actor = 'CUSTOMER' | 'WORKER';
@@ -58,9 +59,11 @@ const requestSelect = {
     select: {
       id: true,
       ratingAvg: true,
+      totalReviews: true,
       user: { select: { id: true, fullName: true, avatarUrl: true, phone: true } },
     },
   },
+  review: { select: requestReviewSelect },
 } satisfies Prisma.ServiceRequestSelect;
 
 export type RequestStatusUpdateResult =
@@ -180,8 +183,15 @@ export async function listRequests(
     }),
   ]);
 
+  const decoratedItems = role === 'CUSTOMER'
+    ? items.map(item => ({
+      ...item,
+      canReview: item.status === 'COMPLETED' && Boolean(item.worker) && !item.review && item.worker?.user.id !== userId,
+    }))
+    : items;
+
   return {
-    items,
+    items: decoratedItems,
     pagination: { total, page, limit, pages: Math.ceil(total / limit) },
   };
 }
@@ -198,7 +208,15 @@ export async function getRequest(id: string, userId: string, role: string) {
     throw { status: 403, message: 'Not your request' };
   }
 
-  return request;
+  return {
+    ...request,
+    canReview: role === 'CUSTOMER'
+      && request.customer.id === userId
+      && request.status === 'COMPLETED'
+      && Boolean(request.worker)
+      && !request.review
+      && request.worker?.user.id !== userId,
+  };
 }
 
 // ─── Update status ────────────────────────────────────────────────────────────

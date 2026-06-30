@@ -42,9 +42,12 @@ export default function HomeScreen({ navigation }: Props) {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
-          renderItem={({ item }) => (
-            <Pressable onPress={() => navigation.navigate('RequestDetails', { requestId: item.id })}>
+          renderItem={({ item }) => {
+            const canRate = item.status === 'COMPLETED' && Boolean(item.worker) && !item.review && item.canReview !== false;
+
+            return (
               <Card>
+                <Pressable onPress={() => navigation.navigate('RequestDetails', { requestId: item.id })}>
                 <Row justify="space-between" align="flex-start">
                   <Stack gap={spacing.xs} style={{ flex: 1 }}>
                     <Body weight="bold">{item.title}</Body>
@@ -53,9 +56,18 @@ export default function HomeScreen({ navigation }: Props) {
                   </Stack>
                   <StatusBadge status={item.status} />
                 </Row>
+                </Pressable>
+                {canRate ? (
+                  <Button
+                    title={t('rating.open')}
+                    variant="outline"
+                    style={styles.rateButton}
+                    onPress={() => navigation.navigate('Rating', { requestId: item.id })}
+                  />
+                ) : null}
               </Card>
-            </Pressable>
-          )}
+            );
+          }}
         />
       )}
     </Screen>
@@ -66,4 +78,5 @@ const styles = StyleSheet.create({
   header: { padding: spacing.lg, gap: spacing.md },
   list: { paddingHorizontal: spacing.lg, paddingBottom: spacing['4xl'] },
   quickAction: { flexBasis: '31%', flexGrow: 1 },
+  rateButton: { marginTop: spacing.md },
 });
