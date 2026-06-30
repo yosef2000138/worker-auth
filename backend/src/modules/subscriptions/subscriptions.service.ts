@@ -83,16 +83,9 @@ export function getRevenueCatRuntimeConfig() {
 export function hasBackendWorkerProAccess(subscription?: Pick<UserSubscription, 'status' | 'expirationDate'> | null) {
   if (!subscription) return false;
 
-  const activeStatuses: SubscriptionStatus[] = ['ACTIVE', 'TRIAL', 'GRACE_PERIOD'];
-  if (activeStatuses.includes(subscription.status)) {
-    return !subscription.expirationDate || subscription.expirationDate.getTime() > Date.now();
-  }
-
-  if (subscription.status === 'CANCELLED' && subscription.expirationDate) {
-    return subscription.expirationDate.getTime() > Date.now();
-  }
-
-  return false;
+  return subscription.status === 'ACTIVE' &&
+    Boolean(subscription.expirationDate) &&
+    subscription.expirationDate!.getTime() > Date.now();
 }
 
 export function buildWorkerAcceptanceAccess({
@@ -109,17 +102,15 @@ export function buildWorkerAcceptanceAccess({
   hasSubscriptionAccess: boolean;
 }): WorkerAcceptanceAccess {
   const remainingFreeRequests = Math.max(freeAcceptedRequestLimit - acceptedRequestCount, 0);
-  const freeRequestsAvailable = remainingFreeRequests > 0;
-  const subscriptionRequired = subscriptionsEnabled && !freeRequestsAvailable && !hasSubscriptionAccess;
-  const canAcceptMoreRequests = !subscriptionRequired && (freeRequestsAvailable || hasSubscriptionAccess || !subscriptionsEnabled);
+  const hasFreeAccess = acceptedRequestCount < freeAcceptedRequestLimit;
+  const subscriptionRequired = !hasFreeAccess && !hasSubscriptionAccess;
+  const canAcceptMoreRequests = hasFreeAccess || hasSubscriptionAccess;
 
-  const reasonCode = freeRequestsAvailable
+  const reasonCode = hasFreeAccess
     ? 'FREE_REQUESTS_AVAILABLE'
     : hasSubscriptionAccess
     ? 'WORKER_PRO_ACTIVE'
-    : subscriptionsConfigured
-    ? 'WORKER_SUBSCRIPTION_REQUIRED'
-    : 'WORKER_PRO_NOT_AVAILABLE';
+    : 'WORKER_SUBSCRIPTION_REQUIRED';
 
   return {
     acceptedRequestCount,

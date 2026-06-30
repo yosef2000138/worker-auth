@@ -4,6 +4,7 @@ import {
   assertRevenueCatWebhookAuthorized,
   buildWorkerAcceptanceAccess,
   getRevenueCatRuntimeConfig,
+  hasBackendWorkerProAccess,
   mapRevenueCatEnvironment,
   mapRevenueCatEventStatus,
   mapRevenueCatPlatform,
@@ -135,7 +136,7 @@ test('worker acceptance access allows request six with active Worker Pro', () =>
   assert.equal(access.reasonCode, 'WORKER_PRO_ACTIVE');
 });
 
-test('worker acceptance access does not block local development when enforcement is disabled', () => {
+test('worker acceptance access blocks after free quota even when provider is disabled', () => {
   const access = buildWorkerAcceptanceAccess({
     acceptedRequestCount: 20,
     freeAcceptedRequestLimit: 5,
@@ -144,8 +145,63 @@ test('worker acceptance access does not block local development when enforcement
     hasSubscriptionAccess: false,
   });
 
-  assert.equal(access.requiresSubscription, false);
-  assert.equal(access.subscriptionRequired, false);
-  assert.equal(access.canAcceptMoreRequests, true);
-  assert.equal(access.canAcceptRequest, true);
+  assert.equal(access.remainingFreeRequests, 0);
+  assert.equal(access.requiresSubscription, true);
+  assert.equal(access.subscriptionRequired, true);
+  assert.equal(access.canAcceptMoreRequests, false);
+  assert.equal(access.canAcceptRequest, false);
+  assert.equal(access.reasonCode, 'WORKER_SUBSCRIPTION_REQUIRED');
+});
+
+test('worker acceptance access blocks exhausted free quota without a subscription record', () => {
+  const access = buildWorkerAcceptanceAccess({
+    acceptedRequestCount: 5,
+    freeAcceptedRequestLimit: 5,
+    subscriptionsEnabled: true,
+    subscriptionsConfigured: true,
+    hasSubscriptionAccess: hasBackendWorkerProAccess(null),
+  });
+
+  assert.equal(access.requiresSubscription, true);
+  assert.equal(access.canAcceptRequest, false);
+  assert.equal(access.reasonCode, 'WORKER_SUBSCRIPTION_REQUIRED');
+});
+
+test('backend Worker Pro access only trusts active non-expired subscriptions', () => {
+  const future = new Date(Date.now() + 60_000);
+  const past = new Date(Date.now() - 60_000);
+
+  assert.equal(hasBackendWorkerProAccess({ status: 'ACTIVE', expirationDate: future }), true);
+  assert.equal(hasBackendWorkerProAccess({ status: 'ACTIVE', expirationDate: past }), false);
+  assert.equal(hasBackendWorkerProAccess({ status: 'ACTIVE', expirationDate: null }), false);
+  assert.equal(hasBackendWorkerProAccess({ status: 'TRIAL', expirationDate: future }), false);
+  assert.equal(hasBackendWorkerProAccess({ status: 'GRACE_PERIOD', expirationDate: future }), false);
+  assert.equal(hasBackendWorkerProAccess({ status: 'BILLING_ISSUE', expirationDate: future }), false);
+  assert.equal(hasBackendWorkerProAccess({ status: 'CANCELLED', expirationDate: future }), false);
+  assert.equal(hasBackendWorkerProAccess({ status: 'EXPIRED', expirationDate: future }), false);
+  assert.equal(hasBackendWorkerProAccess({ status: 'REFUNDED', expirationDate: future }), false);
+  assert.equal(hasBackendWorkerProAccess({ status: 'UNKNOWN', expirationDate: future }), false);
+});
+
+test('exhausted worker can accept only with active backend subscription access', () => {
+  const blocked = buildWorkerAcceptanceAccess({
+    acceptedRequestCount: 5,
+    freeAcceptedRequestLimit: 5,
+    subscriptionsEnabled: true,
+    subscriptionsConfigured: true,
+    hasSubscriptionAccess: hasBackendWorkerProAccess({ status: 'EXPIRED', expirationDate: new Date(Date.now() + 60_000) }),
+  });
+  const allowed = buildWorkerAcceptanceAccess({
+    acceptedRequestCount: 5,
+    freeAcceptedRequestLimit: 5,
+    subscriptionsEnabled: true,
+    subscriptionsConfigured: true,
+    hasSubscriptionAccess: hasBackendWorkerProAccess({ status: 'ACTIVE', expirationDate: new Date(Date.now() + 60_000) }),
+  });
+
+  assert.equal(blocked.canAcceptRequest, false);
+  assert.equal(blocked.subscriptionRequired, true);
+  assert.equal(allowed.canAcceptRequest, true);
+  assert.equal(allowed.subscriptionRequired, false);
+  assert.equal(allowed.reasonCode, 'WORKER_PRO_ACTIVE');
 });

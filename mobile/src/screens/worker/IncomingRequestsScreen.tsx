@@ -4,10 +4,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { requestService } from '@/services/requestService';
-import { backendSubscriptionQueryKey, updateCachedWorkerAccess, workerProQueryKey } from '@/features/subscriptions';
+import {
+  BackendSubscriptionResponse,
+  backendSubscriptionQueryKey,
+  subscriptionApi,
+  updateCachedWorkerAccess,
+  workerProQueryKey,
+} from '@/features/subscriptions';
 import { Banner, Body, BodySm, Button, Card, EmptyState, ErrorState, H2, ListSkeleton, Row, Screen, Stack, StatusBadge } from '@/components/ui';
 import { MapPreview } from '@/components/map';
-import { Paginated, RootStackParamList, ServiceRequest } from '@/types';
+import { Paginated, RootStackParamList, ServiceRequest, WorkerAcceptanceAccess } from '@/types';
 import { useAuthStore } from '@/store/authStore';
 import { colors, spacing } from '@/theme';
 import { formatAppDate, getLocalizedCategoryName, useLanguage } from '@/i18n';
@@ -19,21 +25,44 @@ function getItems(data?: Paginated<ServiceRequest>) {
   return Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
 }
 
+function canAcceptFromAccess(access?: WorkerAcceptanceAccess) {
+  if (!access) return true;
+  const explicit = access.canAcceptRequest ?? access.canAcceptMoreRequests;
+  if (typeof explicit === 'boolean') return explicit;
+  const used = access.freeRequestsUsed ?? access.acceptedRequestCount;
+  const limit = access.freeRequestLimit ?? access.freeAcceptedRequestLimit;
+  const hasActiveSubscription = access.hasActiveSubscription ?? access.hasSubscriptionAccess;
+  return used < limit || hasActiveSubscription;
+}
+
+function workerAccessFromError(error: unknown) {
+  if (typeof error !== 'object' || error === null || !('details' in error)) return null;
+  const details = (error as { details?: unknown }).details;
+  if (typeof details !== 'object' || details === null || !('freeAcceptedRequestLimit' in details)) return null;
+  return details as WorkerAcceptanceAccess;
+}
+
 export default function IncomingRequestsScreen() {
   const { t, locale, language, plural } = useLanguage();
   const navigation = useNavigation<Nav>();
   const queryClient = useQueryClient();
   const user = useAuthStore(s => s.user);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState<{ tone: 'success' | 'warning'; message: string } | null>(null);
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['incoming'],
     queryFn: () => requestService.list({ status: 'PENDING', limit: 30 }),
   });
+  const backendAccessQuery = useQuery({
+    queryKey: backendSubscriptionQueryKey(user?.id),
+    queryFn: subscriptionApi.me,
+    enabled: Boolean(user?.id),
+    retry: 1,
+  });
   const accept = useMutation({
     mutationFn: (requestId: string) => {
       setAcceptingId(requestId);
-      setNotice('');
+      setNotice(null);
       return requestService.accept(requestId);
     },
     onSuccess: (result) => {
@@ -47,8 +76,9 @@ export default function IncomingRequestsScreen() {
         queryClient.invalidateQueries({ queryKey: workerProQueryKey(user?.id) });
       }
       const remaining = result.workerAccess?.freeRequestsRemaining ?? result.workerAccess?.remainingFreeRequests;
-      setNotice(
-        typeof remaining === 'number'
+      setNotice({
+        tone: 'success',
+        message: typeof remaining === 'number'
           ? `${t('worker.requests.accepted')} ${plural({
             zero: 'subscription.freeRequestsRemaining.zero',
             one: 'subscription.freeRequestsRemaining.one',
@@ -58,28 +88,54 @@ export default function IncomingRequestsScreen() {
             other: 'subscription.freeRequestsRemaining.other',
           }, remaining)}`
           : t('worker.requests.accepted'),
-      );
+      });
       navigation.navigate('ActiveJob', { requestId: request.id });
     },
     onError: (error) => {
       const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
       if (code === 'WORKER_SUBSCRIPTION_REQUIRED' || code === 'WORKER_PRO_REQUIRED') {
+        const workerAccess = workerAccessFromError(error);
+        if (workerAccess) {
+          updateCachedWorkerAccess(queryClient, user?.id, workerAccess);
+        }
         queryClient.invalidateQueries({ queryKey: backendSubscriptionQueryKey(user?.id) });
+        setNotice({ tone: 'warning', message: t('errors.workerProRequired') });
         navigation.navigate('Subscription');
       }
     },
     onSettled: () => setAcceptingId(null),
   });
 
+  const latestWorkerAccess =
+    queryClient.getQueryData<BackendSubscriptionResponse>(backendSubscriptionQueryKey(user?.id))?.workerAccess ??
+    backendAccessQuery.data?.workerAccess;
   const items = getItems(data).filter(item => item.status === 'PENDING');
   const acceptError = accept.isError ? localizedApiErrorMessage(accept.error, t, 'errors.generic') : '';
+  const openWorkerPro = () => {
+    queryClient.invalidateQueries({ queryKey: backendSubscriptionQueryKey(user?.id) });
+    queryClient.invalidateQueries({ queryKey: workerProQueryKey(user?.id) });
+    setNotice({ tone: 'warning', message: t('errors.workerProRequired') });
+    navigation.navigate('Subscription');
+  };
+  const handleAccept = (requestId: string) => {
+    const cachedAccess =
+      queryClient.getQueryData<BackendSubscriptionResponse>(backendSubscriptionQueryKey(user?.id))?.workerAccess ??
+      latestWorkerAccess;
+
+    if (cachedAccess && !canAcceptFromAccess(cachedAccess)) {
+      openWorkerPro();
+      return;
+    }
+
+    accept.mutate(requestId);
+  };
 
   return (
     <Screen padded={false}>
       <View style={styles.header}>
         <H2>{t('worker.requests.title')}</H2>
         <BodySm color={colors.textSecondary}>{t('worker.requests.pendingNear', { count: items.length })}</BodySm>
-        {notice ? <Banner tone="success" message={notice} /> : null}
+        {notice ? <Banner tone={notice.tone} message={notice.message} /> : null}
         {accept.isError && acceptError ? <Banner tone="danger" message={acceptError} /> : null}
       </View>
       {isLoading ? (
@@ -134,7 +190,7 @@ export default function IncomingRequestsScreen() {
                     style={styles.requestAction}
                     loading={acceptingId === item.id}
                     disabled={accept.isPending && acceptingId !== item.id}
-                    onPress={() => accept.mutate(item.id)}
+                    onPress={() => handleAccept(item.id)}
                   />
                 </Row>
               </Stack>

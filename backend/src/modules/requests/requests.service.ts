@@ -263,13 +263,12 @@ export async function updateStatus(
       if (!access.canAcceptMoreRequests) {
         throw {
           status: 402,
-          code: access.reasonCode,
-          message: access.reasonCode === 'WORKER_PRO_NOT_AVAILABLE'
-            ? 'Worker Pro is not available yet.'
-            : 'Worker Pro is required after your free accepted requests are used.',
+          code: 'WORKER_SUBSCRIPTION_REQUIRED',
+          message: 'An active Worker Pro subscription is required to accept more requests.',
           details: access,
         };
       }
+      const shouldConsumeFreeRequest = access.freeRequestsUsed < access.freeRequestLimit;
 
       const accepted = await tx.serviceRequest.updateMany({
         where: { id, status: 'PENDING', workerId: null },
@@ -279,11 +278,13 @@ export async function updateStatus(
         throw { status: 409, message: 'Request is no longer available' };
       }
 
-      await tx.workerAcceptanceUsage.upsert({
-        where: { requestId: id },
-        update: {},
-        create: { workerId: worker.id, requestId: id },
-      });
+      if (shouldConsumeFreeRequest) {
+        await tx.workerAcceptanceUsage.upsert({
+          where: { requestId: id },
+          update: {},
+          create: { workerId: worker.id, requestId: id },
+        });
+      }
 
       const workerAccess = await getWorkerAcceptanceAccess(userId, tx, worker.id);
       const updated = await tx.serviceRequest.findUnique({
@@ -299,20 +300,10 @@ export async function updateStatus(
     return { request: result.updated, workerAccess: result.workerAccess };
   }
 
-  // When a worker accepts, link their worker record
-  let workerId: string | undefined;
-  if (role === 'WORKER' && newStatus === 'ACCEPTED') {
-    const worker = await db.worker.findUnique({ where: { userId } });
-    if (!worker) throw { status: 404, message: 'Worker profile not found' };
-    if (!worker.approvedAt) throw { status: 403, message: 'Worker not yet approved' };
-    workerId = worker.id;
-  }
-
   const updated = await db.serviceRequest.update({
     where: { id },
     data: {
       status: newStatus,
-      ...(workerId && { workerId }),
     },
     select: requestSelect,
   });
