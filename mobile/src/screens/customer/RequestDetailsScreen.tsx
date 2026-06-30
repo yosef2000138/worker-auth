@@ -6,7 +6,6 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types';
 import { requestService } from '@/services/requestService';
 import { paymentService } from '@/services/paymentService';
-import { reviewService } from '@/services/reviewService';
 import {
   JobDescriptionCard,
   JobLoadingSkeleton,
@@ -20,7 +19,7 @@ import {
   openExternalNavigation,
   openPhone,
 } from '@/components/job';
-import { Banner, Body, BodySm, Button, Card, EmptyState, Field, H3, Row, Stack } from '@/components/ui';
+import { Banner, Body, BodySm, Button, Card, EmptyState, H3, Row, Stack } from '@/components/ui';
 import { formatAppDate, formatCurrency, getPaymentStatusLabel, useLanguage } from '@/i18n';
 import { colors, spacing } from '@/theme';
 import { localizedApiErrorMessage } from '@/utils/localizedErrors';
@@ -32,9 +31,6 @@ export default function RequestDetailsScreen({ route, navigation }: Props) {
   const { t, locale } = useLanguage();
   const queryClient = useQueryClient();
   const [successMessage, setSuccessMessage] = React.useState<string | null>(null);
-  const [showReview, setShowReview] = React.useState(false);
-  const [rating, setRating] = React.useState(5);
-  const [comment, setReviewComment] = React.useState('');
 
   const requestQuery = useQuery({
     queryKey: ['request', requestId],
@@ -47,6 +43,13 @@ export default function RequestDetailsScreen({ route, navigation }: Props) {
     queryKey: ['payment', requestId],
     queryFn: () => paymentService.byRequest(requestId),
     enabled: request?.status === 'COMPLETED',
+  });
+
+  const ratingEligibilityQuery = useQuery({
+    queryKey: ['rating-eligibility', requestId],
+    queryFn: () => requestService.ratingEligibility(requestId),
+    enabled: request?.status === 'COMPLETED',
+    retry: 1,
   });
 
   const refetchRequest = requestQuery.refetch;
@@ -71,23 +74,14 @@ export default function RequestDetailsScreen({ route, navigation }: Props) {
     },
   });
 
-  const submitReview = useMutation({
-    mutationFn: () => reviewService.create({ requestId, rating, comment: comment.trim() || undefined }),
-    onSuccess: () => {
-      setSuccessMessage(t('requests.details.reviewSubmitted'));
-      setShowReview(false);
-      setReviewComment('');
-      queryClient.invalidateQueries({ queryKey: ['request', requestId] });
-    },
-  });
-
   const refresh = React.useCallback(() => {
     setSuccessMessage(null);
     void requestQuery.refetch();
     if (request?.status === 'COMPLETED') {
       void paymentQuery.refetch();
+      void ratingEligibilityQuery.refetch();
     }
-  }, [paymentQuery, request?.status, requestQuery]);
+  }, [paymentQuery, ratingEligibilityQuery, request?.status, requestQuery]);
 
   if (requestQuery.isLoading) {
     return (
@@ -116,9 +110,11 @@ export default function RequestDetailsScreen({ route, navigation }: Props) {
   const canChat = Boolean(request.worker && request.status !== 'PENDING' && request.status !== 'CANCELLED');
   const canCall = Boolean(request.worker?.user?.phone);
   const canCancel = ['PENDING', 'ACCEPTED', 'ON_THE_WAY'].includes(request.status);
-  const canReview = request.status === 'COMPLETED' && !payment;
+  const ratingEligibility = ratingEligibilityQuery.data;
+  const canReview = request.status === 'COMPLETED' && Boolean(ratingEligibility?.canRate);
+  const alreadyRated = request.status === 'COMPLETED' && Boolean(ratingEligibility?.alreadyRated);
   const isTerminal = request.status === 'COMPLETED' || request.status === 'CANCELLED';
-  const busy = cancel.isPending || submitReview.isPending;
+  const busy = cancel.isPending;
 
   const confirmCancel = () => {
     Alert.alert(
@@ -143,7 +139,7 @@ export default function RequestDetailsScreen({ route, navigation }: Props) {
       {successMessage ? <Banner message={successMessage} /> : null}
       {requestQuery.isRefetchError ? <Banner tone="warning" message={t('requests.details.refreshFailed')} /> : null}
       {cancel.isError ? <Banner tone="danger" message={localizedApiErrorMessage(cancel.error, t, 'requests.details.cancelFailed')} /> : null}
-      {submitReview.isError ? <Banner tone="danger" message={localizedApiErrorMessage(submitReview.error, t, 'requests.details.reviewFailed')} /> : null}
+      {ratingEligibilityQuery.isError && request.status === 'COMPLETED' ? <Banner tone="warning" message={t('rating.loadErrorTitle')} /> : null}
 
       <JobTerminalStateCard request={request} />
       <JobSummaryCard request={request} />
@@ -231,48 +227,38 @@ export default function RequestDetailsScreen({ route, navigation }: Props) {
         </Card>
       ) : null}
 
-      {canReview && !showReview ? (
+      {canReview ? (
         <Card>
           <Stack gap={spacing.md}>
-            <H3>{t('requests.details.leaveReview')}</H3>
+            <H3>{t('rating.title')}</H3>
             <BodySm color={colors.textSecondary}>{t('requests.details.leaveReviewBody')}</BodySm>
             <Button
-              title={t('requests.details.writeReview')}
+              title={t('rating.open')}
               variant="outline"
-              onPress={() => setShowReview(true)}
+              onPress={() => navigation.navigate('Rating', { requestId })}
               accessibilityLabel={t('requests.details.writeReviewA11y')}
             />
           </Stack>
         </Card>
       ) : null}
 
-      {showReview ? (
+      {alreadyRated ? (
         <Card>
           <Stack gap={spacing.md}>
-            <H3>{t('requests.details.yourReview')}</H3>
-            <Row gap={spacing.sm}>
-              {[1, 2, 3, 4, 5].map(i => (
-                <Ionicons
-                  key={i}
-                  name={i <= rating ? 'star' : 'star-outline'}
-                  size={30}
-                  color={colors.warning}
-                  onPress={() => setRating(i)}
-                  suppressHighlighting
-                />
-              ))}
-            </Row>
-            <BodySm color={colors.textSecondary}>{t('common.ratingOutOfFive', { rating })}</BodySm>
-            <Field
-              label={t('requests.details.comment')}
-              placeholder={t('requests.details.commentPlaceholder')}
-              value={comment}
-              onChangeText={setReviewComment}
-              multiline
-              style={{ minHeight: 82, textAlignVertical: 'top' }}
-            />
-            <Button title={t('requests.details.submitReview')} loading={submitReview.isPending} onPress={() => submitReview.mutate()} />
-            <Button title={t('common.cancel')} variant="ghost" onPress={() => setShowReview(false)} disabled={submitReview.isPending} />
+            <H3>{t('rating.alreadyRatedTitle')}</H3>
+            <BodySm color={colors.textSecondary}>{t('rating.alreadyRatedMessage')}</BodySm>
+            {ratingEligibility?.review?.rating ? (
+              <Row gap={spacing.xs}>
+                {[1, 2, 3, 4, 5].map(i => (
+                  <Ionicons
+                    key={i}
+                    name={i <= (ratingEligibility.review?.rating ?? 0) ? 'star' : 'star-outline'}
+                    size={22}
+                    color={colors.warning}
+                  />
+                ))}
+              </Row>
+            ) : null}
           </Stack>
         </Card>
       ) : null}

@@ -52,7 +52,17 @@ export type WorkerAcceptanceAccess = {
   requiresSubscription: boolean;
   hasSubscriptionAccess: boolean;
   canAcceptMoreRequests: boolean;
-  reasonCode: 'FREE_REQUESTS_AVAILABLE' | 'WORKER_PRO_ACTIVE' | 'WORKER_PRO_NOT_AVAILABLE' | 'WORKER_PRO_REQUIRED';
+  freeRequestsUsed: number;
+  freeRequestLimit: number;
+  freeRequestsRemaining: number;
+  subscriptionRequired: boolean;
+  hasActiveSubscription: boolean;
+  canAcceptRequest: boolean;
+  reasonCode:
+    | 'FREE_REQUESTS_AVAILABLE'
+    | 'WORKER_PRO_ACTIVE'
+    | 'WORKER_PRO_NOT_AVAILABLE'
+    | 'WORKER_SUBSCRIPTION_REQUIRED';
 };
 
 export function getRevenueCatRuntimeConfig() {
@@ -100,24 +110,30 @@ export function buildWorkerAcceptanceAccess({
 }): WorkerAcceptanceAccess {
   const remainingFreeRequests = Math.max(freeAcceptedRequestLimit - acceptedRequestCount, 0);
   const freeRequestsAvailable = remainingFreeRequests > 0;
-  const requiresSubscription = subscriptionsEnabled && !freeRequestsAvailable;
-  const canAcceptMoreRequests = !requiresSubscription || hasSubscriptionAccess;
+  const subscriptionRequired = subscriptionsEnabled && !freeRequestsAvailable && !hasSubscriptionAccess;
+  const canAcceptMoreRequests = !subscriptionRequired && (freeRequestsAvailable || hasSubscriptionAccess || !subscriptionsEnabled);
 
   const reasonCode = freeRequestsAvailable
     ? 'FREE_REQUESTS_AVAILABLE'
     : hasSubscriptionAccess
     ? 'WORKER_PRO_ACTIVE'
     : subscriptionsConfigured
-    ? 'WORKER_PRO_REQUIRED'
+    ? 'WORKER_SUBSCRIPTION_REQUIRED'
     : 'WORKER_PRO_NOT_AVAILABLE';
 
   return {
     acceptedRequestCount,
     freeAcceptedRequestLimit,
     remainingFreeRequests,
-    requiresSubscription,
+    requiresSubscription: subscriptionRequired,
     hasSubscriptionAccess,
     canAcceptMoreRequests,
+    freeRequestsUsed: acceptedRequestCount,
+    freeRequestLimit: freeAcceptedRequestLimit,
+    freeRequestsRemaining: remainingFreeRequests,
+    subscriptionRequired,
+    hasActiveSubscription: hasSubscriptionAccess,
+    canAcceptRequest: canAcceptMoreRequests,
     reasonCode,
   };
 }
@@ -144,12 +160,7 @@ export async function getWorkerAcceptanceAccess(
   }
 
   const [acceptedRequestCount, subscription] = await Promise.all([
-    tx.serviceRequest.count({
-      where: {
-        workerId: worker.id,
-        status: { in: ['ACCEPTED', 'ON_THE_WAY', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'] },
-      },
-    }),
+    tx.workerAcceptanceUsage.count({ where: { workerId: worker.id } }),
     config.configured
       ? tx.userSubscription.findFirst({
         where: { userId, provider: PROVIDER, entitlementId: config.entitlementId },

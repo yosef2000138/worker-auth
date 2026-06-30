@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import * as service from './requests.service';
+import * as reviewsService from '../reviews/reviews.service';
 import { RequestStatus } from '@prisma/client';
 
 // POST /api/v1/requests
@@ -40,6 +41,26 @@ export async function getOne(req: Request, res: Response, next: NextFunction) {
       req.user!.role,
     );
     res.json({ success: true, data: request });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/v1/requests/:id/rating-eligibility
+export async function ratingEligibility(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await reviewsService.getRatingEligibility(req.user!.sub, req.params.id);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/v1/requests/:id/reviews
+export async function createReview(req: Request, res: Response, next: NextFunction) {
+  try {
+    const review = await reviewsService.createRequestReview(req.user!.sub, req.params.id, req.body);
+    res.status(201).json({ success: true, data: review });
   } catch (err) {
     next(err);
   }

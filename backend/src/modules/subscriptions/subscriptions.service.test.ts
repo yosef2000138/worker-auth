@@ -47,6 +47,37 @@ test('RevenueCat webhook rejects requests while token is missing', () => {
   );
 });
 
+test('worker acceptance access starts with zero used free requests', () => {
+  const access = buildWorkerAcceptanceAccess({
+    acceptedRequestCount: 0,
+    freeAcceptedRequestLimit: 5,
+    subscriptionsEnabled: true,
+    subscriptionsConfigured: true,
+    hasSubscriptionAccess: false,
+  });
+
+  assert.equal(access.freeRequestLimit, 5);
+  assert.equal(access.freeRequestsUsed, 0);
+  assert.equal(access.freeRequestsRemaining, 5);
+  assert.equal(access.subscriptionRequired, false);
+  assert.equal(access.canAcceptRequest, true);
+});
+
+test('worker acceptance access reflects one consumed free request', () => {
+  const access = buildWorkerAcceptanceAccess({
+    acceptedRequestCount: 1,
+    freeAcceptedRequestLimit: 5,
+    subscriptionsEnabled: true,
+    subscriptionsConfigured: true,
+    hasSubscriptionAccess: false,
+  });
+
+  assert.equal(access.freeRequestsUsed, 1);
+  assert.equal(access.freeRequestsRemaining, 4);
+  assert.equal(access.subscriptionRequired, false);
+  assert.equal(access.canAcceptRequest, true);
+});
+
 test('worker acceptance access allows the first five requests for free', () => {
   const access = buildWorkerAcceptanceAccess({
     acceptedRequestCount: 4,
@@ -57,8 +88,13 @@ test('worker acceptance access allows the first five requests for free', () => {
   });
 
   assert.equal(access.remainingFreeRequests, 1);
+  assert.equal(access.freeRequestsUsed, 4);
+  assert.equal(access.freeRequestLimit, 5);
+  assert.equal(access.freeRequestsRemaining, 1);
   assert.equal(access.requiresSubscription, false);
+  assert.equal(access.subscriptionRequired, false);
   assert.equal(access.canAcceptMoreRequests, true);
+  assert.equal(access.canAcceptRequest, true);
   assert.equal(access.reasonCode, 'FREE_REQUESTS_AVAILABLE');
 });
 
@@ -72,9 +108,14 @@ test('worker acceptance access requires Worker Pro after free requests are used'
   });
 
   assert.equal(access.remainingFreeRequests, 0);
+  assert.equal(access.freeRequestsUsed, 5);
+  assert.equal(access.freeRequestLimit, 5);
+  assert.equal(access.freeRequestsRemaining, 0);
   assert.equal(access.requiresSubscription, true);
+  assert.equal(access.subscriptionRequired, true);
   assert.equal(access.canAcceptMoreRequests, false);
-  assert.equal(access.reasonCode, 'WORKER_PRO_REQUIRED');
+  assert.equal(access.canAcceptRequest, false);
+  assert.equal(access.reasonCode, 'WORKER_SUBSCRIPTION_REQUIRED');
 });
 
 test('worker acceptance access allows request six with active Worker Pro', () => {
@@ -86,8 +127,11 @@ test('worker acceptance access allows request six with active Worker Pro', () =>
     hasSubscriptionAccess: true,
   });
 
-  assert.equal(access.requiresSubscription, true);
+  assert.equal(access.requiresSubscription, false);
+  assert.equal(access.subscriptionRequired, false);
+  assert.equal(access.hasActiveSubscription, true);
   assert.equal(access.canAcceptMoreRequests, true);
+  assert.equal(access.canAcceptRequest, true);
   assert.equal(access.reasonCode, 'WORKER_PRO_ACTIVE');
 });
 
@@ -101,5 +145,7 @@ test('worker acceptance access does not block local development when enforcement
   });
 
   assert.equal(access.requiresSubscription, false);
+  assert.equal(access.subscriptionRequired, false);
   assert.equal(access.canAcceptMoreRequests, true);
+  assert.equal(access.canAcceptRequest, true);
 });

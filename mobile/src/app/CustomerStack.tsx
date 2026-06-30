@@ -9,6 +9,7 @@ import FavoritesScreen from '@/screens/customer/FavoritesScreen';
 import HomeScreen from '@/screens/customer/HomeScreen';
 import NotificationsScreen from '@/screens/customer/NotificationsScreen';
 import ProfileScreen from '@/screens/customer/ProfileScreen';
+import RatingScreen from '@/screens/customer/RatingScreen';
 import RequestDetailsScreen from '@/screens/customer/RequestDetailsScreen';
 import WorkerProfileScreen from '@/screens/customer/WorkerProfileScreen';
 import WorkerSearchScreen from '@/screens/customer/WorkerSearchScreen';
@@ -35,6 +36,7 @@ function HomeStack() {
       <Stack.Screen name="WorkerSearch" component={WorkerSearchScreen} options={{ title: t('nav.findWorkers'), headerRight: messagesHeader }} />
       <Stack.Screen name="WorkerProfile" component={WorkerProfileScreen} options={{ title: t('nav.workerProfile') }} />
       <Stack.Screen name="RequestDetails" component={RequestDetailsScreen} options={{ title: t('nav.requestDetails') }} />
+      <Stack.Screen name="Rating" component={RatingScreen} options={{ title: t('nav.rating') }} />
       <Stack.Screen name="Chat" component={ChatScreen} options={{ title: t('nav.chat') }} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: t('nav.notifications') }} />
     </Stack.Navigator>

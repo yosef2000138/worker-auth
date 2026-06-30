@@ -6,7 +6,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Paginated, RootStackParamList, ServiceRequest } from '@/types';
 import { requestService } from '@/services/requestService';
 import { workerService } from '@/services/workerService';
-import { BackendSubscriptionResponse, subscriptionApi, SUBSCRIPTION_CONFIG } from '@/features/subscriptions';
+import { BackendSubscriptionResponse, backendSubscriptionQueryKey, subscriptionApi, SUBSCRIPTION_CONFIG } from '@/features/subscriptions';
+import { useAuthStore } from '@/store/authStore';
 import { Avatar, Badge, Body, BodySm, Button, Card, EmptyState, ErrorState, H2, ListSkeleton, Row, Screen, Stack, StatusBadge } from '@/components/ui';
 import { formatAppDate, useLanguage } from '@/i18n';
 import { colors, spacing } from '@/theme';
@@ -42,6 +43,10 @@ function SubscriptionSummaryCard({
   locale: string;
 }) {
   if (!status) return null;
+  const access = status.workerAccess;
+  const used = access?.freeRequestsUsed ?? access?.acceptedRequestCount ?? 0;
+  const limit = access?.freeRequestLimit ?? access?.freeAcceptedRequestLimit ?? 0;
+  const remaining = access?.freeRequestsRemaining ?? access?.remainingFreeRequests ?? 0;
   const plannedMonthlyPrice = t('subscription.price.monthly', {
     price: normalizePriceForLocale(SUBSCRIPTION_CONFIG.plannedPriceLabel, locale),
   });
@@ -62,6 +67,11 @@ function SubscriptionSummaryCard({
                 : t('worker.dashboard.endsOn', { date: formatAppDate(status.expirationDate, locale) })
               : t('worker.dashboard.billingStore')}
           </BodySm>
+          {access ? (
+            <BodySm color={colors.textSecondary}>
+              {t('subscription.freeUsageSummary', { used, limit, remaining })}
+            </BodySm>
+          ) : null}
           <Button title={t('worker.dashboard.viewPro')} variant="outline" size="sm" onPress={onPress} />
         </Stack>
       </Card>
@@ -76,7 +86,11 @@ function SubscriptionSummaryCard({
           <BodySm color={colors.textSecondary}>{t('subscription.price.planned', { price: plannedMonthlyPrice })}</BodySm>
         </Row>
         <Body weight="bold">{status.enabled ? t('worker.dashboard.proAvailable') : t('worker.dashboard.proNotConfigured')}</Body>
-        <BodySm color={colors.textSecondary}>{t('worker.dashboard.normalAvailable')}</BodySm>
+        <BodySm color={colors.textSecondary}>
+          {access
+            ? t('subscription.freeUsageSummary', { used, limit, remaining })
+            : t('worker.dashboard.normalAvailable')}
+        </BodySm>
         <Button title={t('worker.dashboard.viewPro')} variant="outline" size="sm" onPress={onPress} />
       </Stack>
     </Card>
@@ -85,9 +99,15 @@ function SubscriptionSummaryCard({
 
 export default function DashboardScreen({ navigation }: Props) {
   const { t, locale } = useLanguage();
+  const user = useAuthStore(s => s.user);
   const workerQuery = useQuery({ queryKey: ['worker-me'], queryFn: workerService.me, retry: 1 });
   const requestsQuery = useQuery({ queryKey: ['worker-requests'], queryFn: () => requestService.list({ limit: 30 }), retry: 1 });
-  const subscriptionQuery = useQuery({ queryKey: ['backend-subscription'], queryFn: subscriptionApi.me, retry: 1 });
+  const subscriptionQuery = useQuery({
+    queryKey: backendSubscriptionQueryKey(user?.id),
+    queryFn: subscriptionApi.me,
+    enabled: Boolean(user?.id),
+    retry: 1,
+  });
   const refetchSubscription = subscriptionQuery.refetch;
   useFocusEffect(
     React.useCallback(() => {

@@ -4,11 +4,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { requestService } from '@/services/requestService';
+import { backendSubscriptionQueryKey, updateCachedWorkerAccess, workerProQueryKey } from '@/features/subscriptions';
 import { Banner, Body, BodySm, Button, Card, EmptyState, ErrorState, H2, ListSkeleton, Row, Screen, Stack, StatusBadge } from '@/components/ui';
 import { MapPreview } from '@/components/map';
 import { Paginated, RootStackParamList, ServiceRequest } from '@/types';
+import { useAuthStore } from '@/store/authStore';
 import { colors, spacing } from '@/theme';
 import { formatAppDate, getLocalizedCategoryName, useLanguage } from '@/i18n';
+import { localizedApiErrorMessage } from '@/utils/localizedErrors';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -17,9 +20,10 @@ function getItems(data?: Paginated<ServiceRequest>) {
 }
 
 export default function IncomingRequestsScreen() {
-  const { t, locale, language } = useLanguage();
+  const { t, locale, language, plural } = useLanguage();
   const navigation = useNavigation<Nav>();
   const queryClient = useQueryClient();
+  const user = useAuthStore(s => s.user);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const { data, isLoading, isError, refetch } = useQuery({
@@ -30,20 +34,45 @@ export default function IncomingRequestsScreen() {
     mutationFn: (requestId: string) => {
       setAcceptingId(requestId);
       setNotice('');
-      return requestService.updateStatus(requestId, 'ACCEPTED');
+      return requestService.accept(requestId);
     },
-    onSuccess: (request) => {
+    onSuccess: (result) => {
+      const request = result.request;
       queryClient.invalidateQueries({ queryKey: ['incoming'] });
       queryClient.invalidateQueries({ queryKey: ['worker-requests'] });
       queryClient.setQueryData(['request', request.id], request);
-      setNotice(t('worker.requests.accepted'));
+      if (result.workerAccess) {
+        updateCachedWorkerAccess(queryClient, user?.id, result.workerAccess);
+        queryClient.invalidateQueries({ queryKey: backendSubscriptionQueryKey(user?.id) });
+        queryClient.invalidateQueries({ queryKey: workerProQueryKey(user?.id) });
+      }
+      const remaining = result.workerAccess?.freeRequestsRemaining ?? result.workerAccess?.remainingFreeRequests;
+      setNotice(
+        typeof remaining === 'number'
+          ? `${t('worker.requests.accepted')} ${plural({
+            zero: 'subscription.freeRequestsRemaining.zero',
+            one: 'subscription.freeRequestsRemaining.one',
+            two: 'subscription.freeRequestsRemaining.two',
+            few: 'subscription.freeRequestsRemaining.few',
+            many: 'subscription.freeRequestsRemaining.many',
+            other: 'subscription.freeRequestsRemaining.other',
+          }, remaining)}`
+          : t('worker.requests.accepted'),
+      );
       navigation.navigate('ActiveJob', { requestId: request.id });
+    },
+    onError: (error) => {
+      const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+      if (code === 'WORKER_SUBSCRIPTION_REQUIRED' || code === 'WORKER_PRO_REQUIRED') {
+        queryClient.invalidateQueries({ queryKey: backendSubscriptionQueryKey(user?.id) });
+        navigation.navigate('Subscription');
+      }
     },
     onSettled: () => setAcceptingId(null),
   });
 
   const items = getItems(data).filter(item => item.status === 'PENDING');
-  const acceptError = accept.isError ? t('errors.generic') : '';
+  const acceptError = accept.isError ? localizedApiErrorMessage(accept.error, t, 'errors.generic') : '';
 
   return (
     <Screen padded={false}>

@@ -11,6 +11,7 @@ import {
   listRequestsSchema,
   idParamSchema,
   cancelSchema,
+  createRequestReviewSchema,
 } from './requests.schema';
 
 const router = Router();
@@ -32,6 +33,20 @@ router.get(
   '/',
   validate(listRequestsSchema),
   controller.list,
+);
+
+router.get(
+  '/:id/rating-eligibility',
+  authorize('CUSTOMER'),
+  validate(idParamSchema),
+  controller.ratingEligibility,
+);
+
+router.post(
+  '/:id/reviews',
+  authorize('CUSTOMER'),
+  validate(createRequestReviewSchema),
+  controller.createReview,
 );
 
 // Single request — role-aware visibility in service layer

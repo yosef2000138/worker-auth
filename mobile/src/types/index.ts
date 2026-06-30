@@ -80,8 +80,51 @@ export type ServiceRequest = {
 
 export type Message = { id: string; requestId: string; senderId: string; content: string; readAt?: string | null; createdAt: string; sender?: User };
 export type NotificationItem = { id: string; title?: string; body?: string; message?: string; isRead?: boolean; createdAt?: string };
-export type Review = { id: string; requestId?: string; workerId?: string; rating: number; comment?: string | null; createdAt?: string; customer?: User; reviewer?: User };
+export type Review = {
+  id: string;
+  requestId?: string;
+  workerId?: string;
+  rating: number;
+  comment?: string | null;
+  createdAt?: string;
+  customer?: User;
+  reviewer?: User;
+  reviewee?: User;
+  request?: Pick<ServiceRequest, 'id' | 'title' | 'category'>;
+};
 export type Payment = { id: string; requestId: string; amount: number | string; status?: string; method?: PaymentMethod; currency?: string; createdAt?: string; request?: Pick<ServiceRequest, 'id' | 'title' | 'updatedAt'> };
+export type WorkerAccessReasonCode =
+  | 'FREE_REQUESTS_AVAILABLE'
+  | 'WORKER_PRO_ACTIVE'
+  | 'WORKER_PRO_NOT_AVAILABLE'
+  | 'WORKER_SUBSCRIPTION_REQUIRED'
+  | 'WORKER_PRO_REQUIRED';
+export type WorkerAcceptanceAccess = {
+  acceptedRequestCount: number;
+  freeAcceptedRequestLimit: number;
+  remainingFreeRequests: number;
+  requiresSubscription: boolean;
+  hasSubscriptionAccess: boolean;
+  canAcceptMoreRequests: boolean;
+  freeRequestsUsed?: number;
+  freeRequestLimit?: number;
+  freeRequestsRemaining?: number;
+  subscriptionRequired?: boolean;
+  hasActiveSubscription?: boolean;
+  canAcceptRequest?: boolean;
+  reasonCode: WorkerAccessReasonCode;
+};
+export type RequestStatusUpdateResult = ServiceRequest | { request: ServiceRequest; workerAccess?: WorkerAcceptanceAccess };
+export type RatingEligibility = {
+  requestId: string;
+  completed: boolean;
+  hasWorker: boolean;
+  alreadyRated: boolean;
+  canRate: boolean;
+  request?: Pick<ServiceRequest, 'id' | 'title' | 'category'> & { completedAt?: string | null };
+  worker?: WorkerProfile | null;
+  review?: Review | null;
+};
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -105,6 +148,7 @@ export type RootStackParamList = {
   WorkerSearch: { categoryId?: string } | undefined;
   WorkerProfile: { workerId: string };
   RequestDetails: { requestId: string };
+  Rating: { requestId: string };
   Chat: { requestId: string };
   Notifications: undefined;
   Favorites: undefined;

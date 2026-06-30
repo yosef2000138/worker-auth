@@ -1,10 +1,25 @@
 import { useCallback, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/store/authStore';
+import type { WorkerAcceptanceAccess } from '@/types';
 import { subscriptionApi } from './api';
+import type { BackendSubscriptionResponse } from './types';
 import { revenueCatService } from './revenueCatService';
 
-const workerProQueryKey = (userId?: string | null) => ['worker-pro-subscription', userId ?? 'anonymous'];
+export const workerProQueryKey = (userId?: string | null) => ['worker-pro-subscription', userId ?? 'anonymous'];
+export const backendSubscriptionQueryKey = (userId?: string | null) => ['backend-subscription', userId ?? 'anonymous'];
+
+export function updateCachedWorkerAccess(
+  queryClient: QueryClient,
+  userId: string | null | undefined,
+  workerAccess: WorkerAcceptanceAccess,
+) {
+  queryClient.setQueryData<BackendSubscriptionResponse | undefined>(
+    backendSubscriptionQueryKey(userId),
+    current => current ? { ...current, workerAccess } : current,
+  );
+}
 
 export function useRevenueCatIdentity(userId?: string | null) {
   useEffect(() => {
@@ -30,7 +45,7 @@ export function useWorkerProSubscription() {
   });
 
   const backendQuery = useQuery({
-    queryKey: ['backend-subscription', userId ?? 'anonymous'],
+    queryKey: backendSubscriptionQueryKey(userId),
     queryFn: subscriptionApi.me,
     enabled: Boolean(userId),
     retry: 1,
@@ -38,7 +53,7 @@ export function useWorkerProSubscription() {
 
   const refresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: workerProQueryKey(userId) });
-    queryClient.invalidateQueries({ queryKey: ['backend-subscription', userId ?? 'anonymous'] });
+    queryClient.invalidateQueries({ queryKey: backendSubscriptionQueryKey(userId) });
   }, [queryClient, userId]);
 
   const purchase = useMutation({

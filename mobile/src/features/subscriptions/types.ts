@@ -1,4 +1,5 @@
 import type { CustomerInfo, PurchasesPackage } from 'react-native-purchases';
+import type { WorkerAcceptanceAccess } from '@/types';
 
 export type SubscriptionRuntimeStatus =
   | 'NOT_CONFIGURED'
@@ -44,15 +45,7 @@ export type BackendSubscriptionResponse = {
   expirationDate: string | null;
   storeProductId: string | null;
   entitlementId: string;
-  workerAccess?: {
-    acceptedRequestCount: number;
-    freeAcceptedRequestLimit: number;
-    remainingFreeRequests: number;
-    requiresSubscription: boolean;
-    hasSubscriptionAccess: boolean;
-    canAcceptMoreRequests: boolean;
-    reasonCode: 'FREE_REQUESTS_AVAILABLE' | 'WORKER_PRO_ACTIVE' | 'WORKER_PRO_NOT_AVAILABLE' | 'WORKER_PRO_REQUIRED';
-  };
+  workerAccess?: WorkerAcceptanceAccess;
 };
 
 export type PurchaseActionResult = {

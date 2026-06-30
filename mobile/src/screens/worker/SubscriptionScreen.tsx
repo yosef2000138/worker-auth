@@ -75,6 +75,10 @@ export default function SubscriptionScreen() {
   const displayPrice = status?.localizedPrice
     ? t('subscription.price.monthly', { price: normalizePriceForLocale(status.localizedPrice, locale) })
     : t('subscription.price.planned', { price: plannedMonthlyPrice });
+  const usedFreeRequests = workerAccess?.freeRequestsUsed ?? workerAccess?.acceptedRequestCount ?? 0;
+  const freeRequestLimit = workerAccess?.freeRequestLimit ?? workerAccess?.freeAcceptedRequestLimit ?? 0;
+  const remainingFreeRequests = workerAccess?.freeRequestsRemaining ?? workerAccess?.remainingFreeRequests ?? 0;
+  const canAcceptRequest = workerAccess?.canAcceptRequest ?? workerAccess?.canAcceptMoreRequests ?? false;
   const canSubscribe = status?.status === 'AVAILABLE' && Boolean(status.packageToPurchase) && !status.hasAccess;
   const canRestore = Boolean(status?.configured);
   const busy = purchase.isPending || restore.isPending || statusQuery.isFetching;
@@ -158,15 +162,15 @@ export default function SubscriptionScreen() {
             <>
               <Row justify="space-between">
                 <BodySm color={colors.textSecondary}>{t('subscription.acceptedRequests')}</BodySm>
-                <BodySm weight="bold">{workerAccess.acceptedRequestCount}</BodySm>
+                <BodySm weight="bold">{usedFreeRequests}</BodySm>
               </Row>
               <Row justify="space-between">
                 <BodySm color={colors.textSecondary}>{t('subscription.freeRemaining')}</BodySm>
-                <BodySm weight="bold">{workerAccess.remainingFreeRequests} / {workerAccess.freeAcceptedRequestLimit}</BodySm>
+                <BodySm weight="bold">{remainingFreeRequests} / {freeRequestLimit}</BodySm>
               </Row>
               <Row justify="space-between">
                 <BodySm color={colors.textSecondary}>{t('subscription.nextAcceptance')}</BodySm>
-                <BodySm weight="bold">{workerAccess.canAcceptMoreRequests ? t('common.allowed') : t('subscription.workerProRequired')}</BodySm>
+                <BodySm weight="bold">{canAcceptRequest ? t('common.allowed') : t('subscription.workerProRequired')}</BodySm>
               </Row>
             </>
           ) : (

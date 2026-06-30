@@ -2,7 +2,10 @@ import { RequestStatus, Prisma } from '@prisma/client';
 import { db } from '../../config/database';
 import { uploadBuffer } from '../../config/cloudinary';
 import { pushToUser } from '../../utils/fcm';
-import { getWorkerAcceptanceAccess } from '../subscriptions/subscriptions.service';
+import {
+  getWorkerAcceptanceAccess,
+  WorkerAcceptanceAccess,
+} from '../subscriptions/subscriptions.service';
 
 // ─── FSM ─────────────────────────────────────────────────────────────────────
 type Actor = 'CUSTOMER' | 'WORKER';
@@ -59,6 +62,13 @@ const requestSelect = {
     },
   },
 } satisfies Prisma.ServiceRequestSelect;
+
+export type RequestStatusUpdateResult =
+  | Prisma.ServiceRequestGetPayload<{ select: typeof requestSelect }>
+  | {
+    request: Prisma.ServiceRequestGetPayload<{ select: typeof requestSelect }>;
+    workerAccess: WorkerAcceptanceAccess;
+  };
 
 function pushStatusNotification(
   id: string,
@@ -198,7 +208,7 @@ export async function updateStatus(
   role: Actor,
   newStatus: RequestStatus,
   cancellationReason?: string,
-) {
+): Promise<RequestStatusUpdateResult> {
   const request = await db.serviceRequest.findUnique({
     where: { id },
     include: {
@@ -224,7 +234,8 @@ export async function updateStatus(
         select: requestSelect,
       });
       if (!current) throw { status: 404, message: 'Request not found' };
-      return current;
+      const workerAccess = await getWorkerAcceptanceAccess(userId, db, request.workerId);
+      return { request: current, workerAccess };
     }
   }
 
@@ -268,17 +279,24 @@ export async function updateStatus(
         throw { status: 409, message: 'Request is no longer available' };
       }
 
+      await tx.workerAcceptanceUsage.upsert({
+        where: { requestId: id },
+        update: {},
+        create: { workerId: worker.id, requestId: id },
+      });
+
+      const workerAccess = await getWorkerAcceptanceAccess(userId, tx, worker.id);
       const updated = await tx.serviceRequest.findUnique({
         where: { id },
         select: requestSelect,
       });
       if (!updated) throw { status: 404, message: 'Request not found' };
 
-      return { request: pendingRequest, updated };
+      return { request: pendingRequest, updated, workerAccess };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     pushStatusNotification(id, result.request, role, newStatus, cancellationReason);
-    return result.updated;
+    return { request: result.updated, workerAccess: result.workerAccess };
   }
 
   // When a worker accepts, link their worker record

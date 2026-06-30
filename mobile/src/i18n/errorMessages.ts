@@ -4,6 +4,7 @@ export const apiErrorCodeTranslationKeys: Record<string, TranslationKey> = {
   VALIDATION_ERROR: 'errors.validation',
   UNAUTHORIZED: 'errors.unauthorized',
   FORBIDDEN: 'errors.forbidden',
+  WORKER_SUBSCRIPTION_REQUIRED: 'errors.workerProRequired',
   WORKER_PRO_REQUIRED: 'errors.workerProRequired',
   WORKER_PRO_NOT_AVAILABLE: 'subscription.message.backendDisabled',
 };
