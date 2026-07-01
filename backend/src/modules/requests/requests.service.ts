@@ -2,11 +2,9 @@ import { RequestStatus, Prisma } from '@prisma/client';
 import { db } from '../../config/database';
 import { uploadBuffer } from '../../config/cloudinary';
 import { pushToUser } from '../../utils/fcm';
-import {
-  getWorkerAcceptanceAccess,
-  WorkerAcceptanceAccess,
-} from '../subscriptions/subscriptions.service';
+import { WorkerAcceptanceAccess } from '../subscriptions/subscriptions.service';
 import { requestReviewSelect } from '../reviews/reviews.service';
+import { closeOffersForCancelledRequest } from './offers.service';
 
 // ─── FSM ─────────────────────────────────────────────────────────────────────
 type Actor = 'CUSTOMER' | 'WORKER';
@@ -15,7 +13,7 @@ const TRANSITIONS: Record<
   RequestStatus,
   { next: RequestStatus; by: Actor }[]
 > = {
-  PENDING:     [{ next: 'ACCEPTED',    by: 'WORKER'   }, { next: 'CANCELLED', by: 'CUSTOMER' }],
+  PENDING:     [{ next: 'CANCELLED', by: 'CUSTOMER' }],
   ACCEPTED:    [{ next: 'ON_THE_WAY',  by: 'WORKER'   }, { next: 'CANCELLED', by: 'CUSTOMER' }, { next: 'CANCELLED', by: 'WORKER' }],
   ON_THE_WAY:  [{ next: 'IN_PROGRESS', by: 'WORKER'   }, { next: 'CANCELLED', by: 'CUSTOMER' }],
   IN_PROGRESS: [{ next: 'COMPLETED',   by: 'WORKER'   }],
@@ -123,6 +121,27 @@ export async function createRequest(
   });
   if (!category) throw { status: 404, message: 'Service category not found' };
 
+  const duplicate = await db.serviceRequest.findFirst({
+    where: {
+      customerId,
+      categoryId: body.categoryId,
+      status: { in: ['PENDING', 'ACCEPTED', 'ON_THE_WAY', 'IN_PROGRESS'] },
+      OR: [
+        { address: body.address },
+        { lat: body.lat, lng: body.lng },
+      ],
+    },
+    select: { id: true, status: true },
+  });
+  if (duplicate) {
+    throw {
+      status: 409,
+      code: 'DUPLICATE_ACTIVE_REQUEST',
+      message: 'You already have an active request for this service at this location.',
+      details: duplicate,
+    };
+  }
+
   const imageUrls =
     files.length > 0
       ? await Promise.all(files.map((f) => uploadBuffer(f.buffer, 'worker/requests')))
@@ -158,19 +177,46 @@ export async function listRequests(
   const { page, limit, status } = query;
   const skip = (page - 1) * limit;
 
-  const where: Prisma.ServiceRequestWhereInput =
-    role === 'CUSTOMER'
-      ? { customerId: userId, ...(status && { status }) }
-      : status === 'PENDING'
-      ? { status: 'PENDING' }
+  let where: Prisma.ServiceRequestWhereInput;
+
+  if (role === 'CUSTOMER') {
+    where = { customerId: userId, ...(status && { status }) };
+  } else {
+    const worker = await db.worker.findUnique({
+      where: { userId },
+      select: {
+        id: true,
+        categories: { select: { categoryId: true } },
+      },
+    });
+
+    if (!worker) {
+      return {
+        items: [],
+        pagination: { total: 0, page, limit, pages: 0 },
+      };
+    }
+
+    const workerCategoryIds = worker.categories.map(item => item.categoryId);
+    const openForOffer: Prisma.ServiceRequestWhereInput = {
+      status: 'PENDING',
+      workerId: null,
+      customerId: { not: userId },
+      categoryId: { in: workerCategoryIds },
+    };
+
+    where = status === 'PENDING'
+      ? openForOffer
       : status
       ? { worker: { userId }, status }
       : {
           OR: [
-            { status: 'PENDING' },
+            openForOffer,
             { worker: { userId } },
+            { offers: { some: { workerId: worker.id } } },
           ],
         };
+  }
 
   const [total, items] = await Promise.all([
     db.serviceRequest.count({ where }),
@@ -207,6 +253,24 @@ export async function getRequest(id: string, userId: string, role: string) {
   if (role === 'CUSTOMER' && request.customer.id !== userId) {
     throw { status: 403, message: 'Not your request' };
   }
+  if (role === 'WORKER') {
+    const worker = await db.worker.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!worker) throw { status: 404, message: 'Worker profile not found' };
+
+    const isAssignedWorker = request.worker?.user.id === userId;
+    const isOpenIncomingRequest = request.status === 'PENDING' && !request.worker;
+    const hasOffer = await db.requestOffer.findFirst({
+      where: { requestId: id, workerId: worker.id },
+      select: { id: true },
+    });
+
+    if (!isAssignedWorker && !isOpenIncomingRequest && !hasOffer) {
+      throw { status: 403, message: 'You cannot access this request' };
+    }
+  }
 
   return {
     ...request,
@@ -240,83 +304,20 @@ export async function updateStatus(
     throw { status: 403, message: 'Not your request' };
   }
   if (role === 'WORKER') {
-    const isPendingAccept = request.status === 'PENDING' && newStatus === 'ACCEPTED';
     const isAssigned = request.worker?.userId === userId;
-    if (!isPendingAccept && !isAssigned) {
-      throw { status: 403, message: 'You are not assigned to this request' };
+    if (newStatus === 'ACCEPTED') {
+      throw {
+        status: 409,
+        code: 'CUSTOMER_CONFIRMATION_REQUIRED',
+        message: 'Workers can send offers, but only the customer can choose and accept one.',
+      };
     }
-
-    if (newStatus === 'ACCEPTED' && request.status === 'ACCEPTED' && isAssigned && request.workerId) {
-      const current = await db.serviceRequest.findUnique({
-        where: { id },
-        select: requestSelect,
-      });
-      if (!current) throw { status: 404, message: 'Request not found' };
-      const workerAccess = await getWorkerAcceptanceAccess(userId, db, request.workerId);
-      return { request: current, workerAccess };
+    if (!isAssigned) {
+      throw { status: 403, message: 'You are not assigned to this request' };
     }
   }
 
   assertTransition(request.status, newStatus, role);
-
-  if (role === 'WORKER' && newStatus === 'ACCEPTED') {
-    const result = await db.$transaction(async (tx) => {
-      const pendingRequest = await tx.serviceRequest.findUnique({
-        where: { id },
-        include: {
-          customer: true,
-          worker: { include: { user: true } },
-        },
-      });
-      if (!pendingRequest) throw { status: 404, message: 'Request not found' };
-      if (pendingRequest.status !== 'PENDING' || pendingRequest.workerId) {
-        throw { status: 409, message: 'Request is no longer available' };
-      }
-
-      const worker = await tx.worker.findUnique({ where: { userId } });
-      if (!worker) throw { status: 404, message: 'Worker profile not found' };
-      if (!worker.approvedAt) throw { status: 403, message: 'Worker not yet approved' };
-
-      const access = await getWorkerAcceptanceAccess(userId, tx, worker.id);
-      if (!access.canAcceptMoreRequests) {
-        throw {
-          status: 402,
-          code: 'WORKER_SUBSCRIPTION_REQUIRED',
-          message: 'An active Worker Pro subscription is required to accept more requests.',
-          details: access,
-        };
-      }
-      const shouldConsumeFreeRequest = access.freeRequestsUsed < access.freeRequestLimit;
-
-      const accepted = await tx.serviceRequest.updateMany({
-        where: { id, status: 'PENDING', workerId: null },
-        data: { status: 'ACCEPTED', workerId: worker.id },
-      });
-      if (accepted.count !== 1) {
-        throw { status: 409, message: 'Request is no longer available' };
-      }
-
-      if (shouldConsumeFreeRequest) {
-        await tx.workerAcceptanceUsage.upsert({
-          where: { requestId: id },
-          update: {},
-          create: { workerId: worker.id, requestId: id },
-        });
-      }
-
-      const workerAccess = await getWorkerAcceptanceAccess(userId, tx, worker.id);
-      const updated = await tx.serviceRequest.findUnique({
-        where: { id },
-        select: requestSelect,
-      });
-      if (!updated) throw { status: 404, message: 'Request not found' };
-
-      return { request: pendingRequest, updated, workerAccess };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-
-    pushStatusNotification(id, result.request, role, newStatus, cancellationReason);
-    return { request: result.updated, workerAccess: result.workerAccess };
-  }
 
   const updated = await db.serviceRequest.update({
     where: { id },
@@ -332,6 +333,10 @@ export async function updateStatus(
       where: { id: request.worker.id },
       data: { totalJobs: { increment: 1 } },
     });
+  }
+
+  if (newStatus === 'CANCELLED') {
+    await closeOffersForCancelledRequest(id);
   }
 
   pushStatusNotification(id, request, role, newStatus, cancellationReason);

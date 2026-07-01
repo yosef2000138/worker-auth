@@ -2,16 +2,26 @@ import { api, unwrap } from './api';
 import {
   Message,
   NotificationItem,
+  OfferMessage,
   Paginated,
   PaymentMethod,
   RatingEligibility,
   RequestStatus,
+  RequestOffer,
+  RequestOffersResponse,
   RequestStatusUpdateResult,
   ServiceRequest,
   CreateReviewResponse,
+  ConfirmOfferResponse,
 } from '@/types';
 export type CreateRequestPayload = { categoryId: string; title: string; description: string; lat: number; lng: number; address: string; scheduledAt?: string; paymentMethod: PaymentMethod; images?: { uri: string; name?: string; type?: string }[] };
 export type RequestStatusUpdate = Exclude<RequestStatus, 'PENDING'>;
+export type CreateOfferPayload = {
+  proposedPrice?: number;
+  message?: string;
+  availableAt?: string;
+  estimatedDuration?: string;
+};
 
 function normalizeStatusUpdateResult(data: RequestStatusUpdateResult) {
   if ('request' in data) return data;
@@ -30,6 +40,17 @@ export const requestService = {
     requestService.updateStatusResult(id, status, cancellationReason).then(result => result.request),
   accept: (id: string) => requestService.updateStatusResult(id, 'ACCEPTED'),
   cancel: (id: string, reason?: string) => api.post(`/requests/${id}/cancel`, { reason }).then(unwrap<ServiceRequest>),
+  offers: (requestId: string) => api.get(`/requests/${requestId}/offers`).then(unwrap<RequestOffersResponse>),
+  createOffer: (requestId: string, payload: CreateOfferPayload) =>
+    api.post(`/requests/${requestId}/offers`, payload).then(unwrap<{ offer: RequestOffer; workerAccess?: unknown }>),
+  confirmOffer: (requestId: string, offerId: string) =>
+    api.post(`/requests/${requestId}/offers/${offerId}/confirm`).then(unwrap<ConfirmOfferResponse>),
+  withdrawOffer: (requestId: string, offerId: string) =>
+    api.post(`/requests/${requestId}/offers/${offerId}/withdraw`).then(unwrap<RequestOffer>),
+  offerMessages: (requestId: string, offerId: string, params?: { before?: string; limit?: number }) =>
+    api.get(`/requests/${requestId}/offers/${offerId}/messages`, { params }).then(unwrap<OfferMessage[]>),
+  sendOfferMessage: (requestId: string, offerId: string, content: string) =>
+    api.post(`/requests/${requestId}/offers/${offerId}/messages`, { content }).then(unwrap<OfferMessage>),
   ratingEligibility: (requestId: string) => api.get(`/requests/${requestId}/rating-eligibility`).then(unwrap<RatingEligibility>),
   submitReview: (requestId: string, payload: { rating: number; comment?: string }) =>
     api.post(`/requests/${requestId}/reviews`, payload).then(unwrap<CreateReviewResponse>),

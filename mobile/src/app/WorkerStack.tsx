@@ -12,6 +12,7 @@ import AvailabilityScreen from '@/screens/worker/AvailabilityScreen';
 import WorkerProfileScreen from '@/screens/worker/WorkerProfileScreen';
 import SubscriptionScreen from '@/screens/worker/SubscriptionScreen';
 import ChatScreen from '@/screens/customer/ChatScreen';
+import OfferChatScreen from '@/screens/shared/OfferChatScreen';
 import { useLanguage } from '@/i18n';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -35,6 +36,7 @@ function DashboardStack() {
       />
       <Stack.Screen name="ActiveJob" component={ActiveJobScreen} options={{ title: t('nav.jobDetails') }} />
       <Stack.Screen name="Chat" component={ChatScreen} options={{ title: t('nav.chat') }} />
+      <Stack.Screen name="OfferChat" component={OfferChatScreen} options={{ title: t('offers.privateChat') }} />
     </Stack.Navigator>
   );
 }

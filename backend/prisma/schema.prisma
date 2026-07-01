@@ -63,6 +63,15 @@ enum SubscriptionStatus {
   UNKNOWN
 }
 
+enum RequestOfferStatus {
+  SUBMITTED
+  DISCUSSING
+  SELECTED
+  NOT_SELECTED
+  WITHDRAWN
+  EXPIRED
+}
+
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 model User {
@@ -85,6 +94,7 @@ model User {
   favorites        Favorite[]
   reviewsGiven     Review[]           @relation("ReviewsGiven")
   reviewsReceived  Review[]           @relation("ReviewsReceived")
+  sentOfferMessages OfferMessage[]     @relation("OfferMessagesSent")
   subscriptions    UserSubscription[]
 
   @@map("users")
@@ -114,6 +124,7 @@ model Worker {
   availability     WorkerAvailability[]
   favorites        Favorite[]
   acceptanceUsages WorkerAcceptanceUsage[]
+  offers           RequestOffer[]
 
   @@map("workers")
 }
@@ -168,6 +179,7 @@ model ServiceRequest {
   category        ServiceCategory        @relation(fields: [categoryId], references: [id])
   images          RequestImage[]
   messages        Message[]
+  offers          RequestOffer[]
   review          Review?
   payment         Payment?
   acceptanceUsage WorkerAcceptanceUsage?
@@ -222,6 +234,44 @@ model WorkerAcceptanceUsage {
 
   @@index([workerId])
   @@map("worker_acceptance_usages")
+}
+
+model RequestOffer {
+  id                String             @id @default(uuid())
+  requestId         String
+  workerId          String
+  proposedPrice     Decimal?           @db.Decimal(10, 2)
+  message           String?
+  availableAt       DateTime?
+  estimatedDuration String?
+  status            RequestOfferStatus @default(SUBMITTED)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  request  ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  worker   Worker         @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  messages OfferMessage[]
+
+  @@unique([requestId, workerId])
+  @@index([requestId, status, createdAt])
+  @@index([workerId, status, createdAt])
+  @@map("request_offers")
+}
+
+model OfferMessage {
+  id        String   @id @default(uuid())
+  offerId   String
+  senderId  String
+  content   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  offer  RequestOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  sender User         @relation("OfferMessagesSent", fields: [senderId], references: [id])
+
+  @@index([offerId, createdAt])
+  @@index([senderId])
+  @@map("offer_messages")
 }
 
 // ─── Messages ─────────────────────────────────────────────────────────────────

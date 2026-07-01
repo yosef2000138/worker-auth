@@ -28,6 +28,7 @@ const envSchema = z.object({
   REVENUECAT_ENTITLEMENT_ID: z.string().min(1).default('worker_pro'),
   SUBSCRIPTIONS_ENABLED: z.coerce.boolean().default(false),
   WORKER_FREE_ACCEPTED_REQUEST_LIMIT: z.coerce.number().int().min(0).default(5),
+  MAX_OFFERS_PER_REQUEST: z.coerce.number().int().min(1).max(20).default(5),
 
   // Cloudinary — required for image uploads
   CLOUDINARY_CLOUD_NAME: z.string(),

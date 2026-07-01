@@ -13,7 +13,7 @@ import {
   updateCachedWorkerAccess,
   workerProQueryKey,
 } from '@/features/subscriptions';
-import { Banner, Body, BodySm, Button, Card, EmptyState, ErrorState, H2, ListSkeleton, Row, Screen, Stack, StatusBadge } from '@/components/ui';
+import { Banner, Body, BodySm, Button, Card, EmptyState, ErrorState, Field, H2, ListSkeleton, Row, Screen, Stack, StatusBadge } from '@/components/ui';
 import { MapPreview } from '@/components/map';
 import { Paginated, RootStackParamList, ServiceRequest, WorkerAcceptanceAccess } from '@/types';
 import { useAuthStore } from '@/store/authStore';
@@ -54,11 +54,16 @@ function workerAccessFromError(error: unknown) {
 }
 
 export default function IncomingRequestsScreen() {
-  const { t, locale, language, plural } = useLanguage();
+  const { t, locale, language } = useLanguage();
   const navigation = useNavigation<Nav>();
   const queryClient = useQueryClient();
   const user = useAuthStore(s => s.user);
-  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [offeringId, setOfferingId] = useState<string | null>(null);
+  const [editingOfferId, setEditingOfferId] = useState<string | null>(null);
+  const [offerPrice, setOfferPrice] = useState('');
+  const [offerDuration, setOfferDuration] = useState('');
+  const [offerAvailableAt, setOfferAvailableAt] = useState('');
+  const [offerMessage, setOfferMessage] = useState('');
   const [notice, setNotice] = useState<{ tone: 'success' | 'warning'; message: string } | null>(null);
   const [paywallVisible, setPaywallVisible] = useState(false);
   const { data, isLoading, isError, refetch } = useQuery({
@@ -71,37 +76,35 @@ export default function IncomingRequestsScreen() {
     enabled: Boolean(user?.id),
     retry: 1,
   });
-  const accept = useMutation({
+  const sendOffer = useMutation({
     mutationFn: (requestId: string) => {
-      setAcceptingId(requestId);
+      setOfferingId(requestId);
       setNotice(null);
-      return requestService.accept(requestId);
+      const price = Number(offerPrice);
+      return requestService.createOffer(requestId, {
+        proposedPrice: Number.isFinite(price) && price > 0 ? price : undefined,
+        estimatedDuration: offerDuration.trim() || undefined,
+        availableAt: offerAvailableAt.trim() || undefined,
+        message: offerMessage.trim() || undefined,
+      });
     },
     onSuccess: (result) => {
-      const request = result.request;
       queryClient.invalidateQueries({ queryKey: ['incoming'] });
       queryClient.invalidateQueries({ queryKey: ['worker-requests'] });
-      queryClient.setQueryData(['request', request.id], request);
       if (result.workerAccess) {
-        updateCachedWorkerAccess(queryClient, user?.id, result.workerAccess);
+        updateCachedWorkerAccess(queryClient, user?.id, result.workerAccess as WorkerAcceptanceAccess);
         queryClient.invalidateQueries({ queryKey: backendSubscriptionQueryKey(user?.id) });
         queryClient.invalidateQueries({ queryKey: workerProQueryKey(user?.id) });
       }
-      const remaining = result.workerAccess?.freeRequestsRemaining ?? result.workerAccess?.remainingFreeRequests;
+      setEditingOfferId(null);
+      setOfferPrice('');
+      setOfferDuration('');
+      setOfferAvailableAt('');
+      setOfferMessage('');
       setNotice({
         tone: 'success',
-        message: typeof remaining === 'number'
-          ? `${t('worker.requests.accepted')} ${plural({
-            zero: 'subscription.freeRequestsRemaining.zero',
-            one: 'subscription.freeRequestsRemaining.one',
-            two: 'subscription.freeRequestsRemaining.two',
-            few: 'subscription.freeRequestsRemaining.few',
-            many: 'subscription.freeRequestsRemaining.many',
-            other: 'subscription.freeRequestsRemaining.other',
-          }, remaining)}`
-          : t('worker.requests.accepted'),
+        message: t('offers.offerSent'),
       });
-      navigation.navigate('ActiveJob', { requestId: request.id });
     },
     onError: (error) => {
       const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
@@ -116,21 +119,25 @@ export default function IncomingRequestsScreen() {
         setPaywallVisible(true);
       }
     },
-    onSettled: () => setAcceptingId(null),
+    onSettled: () => setOfferingId(null),
   });
 
   const latestWorkerAccess =
     queryClient.getQueryData<BackendSubscriptionResponse>(backendSubscriptionQueryKey(user?.id))?.workerAccess ??
     backendAccessQuery.data?.workerAccess;
   const items = getItems(data).filter(item => item.status === 'PENDING');
-  const acceptError = accept.isError ? localizedApiErrorMessage(accept.error, t, 'errors.generic') : '';
+  const offerError = sendOffer.isError ? localizedApiErrorMessage(sendOffer.error, t, 'errors.generic') : '';
   const openWorkerPro = () => {
     queryClient.invalidateQueries({ queryKey: backendSubscriptionQueryKey(user?.id) });
     queryClient.invalidateQueries({ queryKey: workerProQueryKey(user?.id) });
     setPaywallVisible(false);
     navigation.navigate('Subscription');
   };
-  const handleAccept = (requestId: string) => {
+  const beginOffer = (requestId: string) => {
+    setNotice(null);
+    setEditingOfferId(current => current === requestId ? null : requestId);
+  };
+  const handleSendOffer = (requestId: string) => {
     const cachedAccess =
       queryClient.getQueryData<BackendSubscriptionResponse>(backendSubscriptionQueryKey(user?.id))?.workerAccess ??
       latestWorkerAccess;
@@ -141,13 +148,13 @@ export default function IncomingRequestsScreen() {
       return;
     }
 
-    accept.mutate(requestId);
+    sendOffer.mutate(requestId);
   };
-  const acceptBlocked = latestWorkerAccess ? !canAcceptFromAccess(latestWorkerAccess) : false;
-  const acceptErrorCode = accept.isError && typeof accept.error === 'object' && accept.error !== null && 'code' in accept.error
-    ? String(accept.error.code)
+  const offerBlocked = latestWorkerAccess ? !canAcceptFromAccess(latestWorkerAccess) : false;
+  const offerErrorCode = sendOffer.isError && typeof sendOffer.error === 'object' && sendOffer.error !== null && 'code' in sendOffer.error
+    ? String(sendOffer.error.code)
     : '';
-  const showAcceptError = accept.isError && acceptError && acceptErrorCode !== 'WORKER_SUBSCRIPTION_REQUIRED' && acceptErrorCode !== 'WORKER_PRO_REQUIRED';
+  const showOfferError = sendOffer.isError && offerError && offerErrorCode !== 'WORKER_SUBSCRIPTION_REQUIRED' && offerErrorCode !== 'WORKER_PRO_REQUIRED';
 
   return (
     <Screen padded={false}>
@@ -155,7 +162,7 @@ export default function IncomingRequestsScreen() {
         <H2>{t('worker.requests.title')}</H2>
         <BodySm color={colors.textSecondary}>{t('worker.requests.pendingNear', { count: items.length })}</BodySm>
         {notice ? <Banner tone={notice.tone} message={notice.message} /> : null}
-        {showAcceptError ? <Banner tone="danger" message={acceptError} /> : null}
+        {showOfferError ? <Banner tone="danger" message={offerError} /> : null}
       </View>
       {isLoading ? (
         <View style={styles.list}><ListSkeleton count={4} /></View>
@@ -182,6 +189,43 @@ export default function IncomingRequestsScreen() {
                 </Row>
                 <BodySm color={colors.textSecondary}>{item.description}</BodySm>
                 <MapPreview address={item.address} lat={item.lat} lng={item.lng} />
+                {editingOfferId === item.id ? (
+                  <Card style={styles.offerForm}>
+                    <Stack gap={spacing.sm}>
+                      <Body weight="bold">{t('offers.makeOffer')}</Body>
+                      <Field
+                        label={t('offers.price')}
+                        value={offerPrice}
+                        onChangeText={setOfferPrice}
+                        keyboardType="decimal-pad"
+                        placeholder={t('offers.pricePlaceholder')}
+                        leftIcon="cash-outline"
+                      />
+                      <Field
+                        label={t('offers.duration')}
+                        value={offerDuration}
+                        onChangeText={setOfferDuration}
+                        placeholder={t('offers.durationPlaceholder')}
+                        leftIcon="time-outline"
+                      />
+                      <Field
+                        label={t('offers.availableAt')}
+                        value={offerAvailableAt}
+                        onChangeText={setOfferAvailableAt}
+                        placeholder={t('offers.availableAtPlaceholder')}
+                        leftIcon="calendar-outline"
+                      />
+                      <Field
+                        label={t('offers.message')}
+                        value={offerMessage}
+                        onChangeText={setOfferMessage}
+                        placeholder={t('offers.messagePlaceholder')}
+                        leftIcon="chatbubble-outline"
+                        multiline
+                      />
+                    </Stack>
+                  </Card>
+                ) : null}
                 <Row gap={spacing.sm} wrap>
                   <Button
                     title={t('common.details')}
@@ -204,14 +248,14 @@ export default function IncomingRequestsScreen() {
                     })}
                   />
                   <Button
-                    title={acceptBlocked ? t('subscription.subscribeToAccept') : t('worker.requests.accept')}
+                    title={offerBlocked ? t('subscription.subscribeToAccept') : editingOfferId === item.id ? t('offers.sendOffer') : t('offers.makeOffer')}
                     fullWidth={false}
                     style={styles.requestAction}
-                    icon={acceptBlocked ? <Ionicons name="lock-closed-outline" size={16} color={colors.textInverse} /> : undefined}
-                    loading={acceptingId === item.id}
-                    disabled={accept.isPending && acceptingId !== item.id}
-                    accessibilityLabel={acceptBlocked ? t('subscription.subscribeToAcceptA11y') : t('worker.requests.accept')}
-                    onPress={() => handleAccept(item.id)}
+                    icon={offerBlocked ? <Ionicons name="lock-closed-outline" size={16} color={colors.textInverse} /> : undefined}
+                    loading={offeringId === item.id}
+                    disabled={sendOffer.isPending && offeringId !== item.id}
+                    accessibilityLabel={offerBlocked ? t('subscription.subscribeToAcceptA11y') : t('offers.sendOffer')}
+                    onPress={() => editingOfferId === item.id ? handleSendOffer(item.id) : beginOffer(item.id)}
                   />
                 </Row>
               </Stack>
@@ -232,5 +276,6 @@ export default function IncomingRequestsScreen() {
 const styles = StyleSheet.create({
   header: { padding: spacing.lg, gap: spacing.xs },
   list: { padding: spacing.lg, paddingBottom: spacing['4xl'] },
+  offerForm: { backgroundColor: colors.bg },
   requestAction: { flexBasis: '31%', flexGrow: 1 },
 });

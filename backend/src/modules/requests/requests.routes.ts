@@ -10,8 +10,13 @@ import {
   updateStatusSchema,
   listRequestsSchema,
   idParamSchema,
+  requestIdParamSchema,
   cancelSchema,
   createRequestReviewSchema,
+  createOfferSchema,
+  offerParamSchema,
+  listOfferMessagesSchema,
+  sendOfferMessageSchema,
 } from './requests.schema';
 
 const router = Router();
@@ -33,6 +38,45 @@ router.get(
   '/',
   validate(listRequestsSchema),
   controller.list,
+);
+
+router.get(
+  '/:requestId/offers',
+  validate(requestIdParamSchema),
+  controller.listOffers,
+);
+
+router.post(
+  '/:requestId/offers',
+  authorize('WORKER'),
+  validate(createOfferSchema),
+  controller.createOffer,
+);
+
+router.post(
+  '/:requestId/offers/:offerId/confirm',
+  authorize('CUSTOMER'),
+  validate(offerParamSchema),
+  controller.confirmOffer,
+);
+
+router.post(
+  '/:requestId/offers/:offerId/withdraw',
+  authorize('WORKER'),
+  validate(offerParamSchema),
+  controller.withdrawOffer,
+);
+
+router.get(
+  '/:requestId/offers/:offerId/messages',
+  validate(listOfferMessagesSchema),
+  controller.listOfferMessages,
+);
+
+router.post(
+  '/:requestId/offers/:offerId/messages',
+  validate(sendOfferMessageSchema),
+  controller.sendOfferMessage,
 );
 
 router.get(

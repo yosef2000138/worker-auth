@@ -12,6 +12,11 @@ export const apiErrorCodeTranslationKeys: Record<string, TranslationKey> = {
   REQUEST_HAS_NO_WORKER: 'errors.requestHasNoWorker',
   REVIEW_NOT_ALLOWED: 'errors.reviewNotAllowed',
   REVIEW_ALREADY_EXISTS: 'errors.requestAlreadyReviewed',
+  CUSTOMER_CONFIRMATION_REQUIRED: 'offers.errorCustomerConfirmationRequired',
+  OFFER_ALREADY_EXISTS: 'offers.errorAlreadyExists',
+  OFFER_CONVERSATION_CLOSED: 'offers.errorClosed',
+  OFFER_LIMIT_REACHED: 'offers.errorLimitReached',
+  REQUEST_NOT_OPEN_FOR_OFFERS: 'offers.errorRequestNotOpen',
 };
 
 export const apiErrorMessageTranslationKeys: Record<string, TranslationKey> = {

@@ -28,14 +28,12 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ActiveJob'>;
 const ACTIVE_STATUSES = ['ACCEPTED', 'ON_THE_WAY', 'IN_PROGRESS'] as const;
 
 const NEXT_STATUS: Partial<Record<RequestStatus, RequestStatusUpdate>> = {
-  PENDING: 'ACCEPTED',
   ACCEPTED: 'ON_THE_WAY',
   ON_THE_WAY: 'IN_PROGRESS',
   IN_PROGRESS: 'COMPLETED',
 };
 
 const ACTION_LABEL_KEY: Partial<Record<RequestStatus, TranslationKey>> = {
-  PENDING: 'jobs.actions.accept',
   ACCEPTED: 'jobs.actions.heading',
   ON_THE_WAY: 'jobs.actions.start',
   IN_PROGRESS: 'jobs.actions.complete',

@@ -13,6 +13,7 @@ import RatingScreen from '@/screens/customer/RatingScreen';
 import RequestDetailsScreen from '@/screens/customer/RequestDetailsScreen';
 import WorkerProfileScreen from '@/screens/customer/WorkerProfileScreen';
 import WorkerSearchScreen from '@/screens/customer/WorkerSearchScreen';
+import OfferChatScreen from '@/screens/shared/OfferChatScreen';
 import { RootStackParamList } from '@/types';
 import { useLanguage } from '@/i18n';
 
@@ -38,6 +39,7 @@ function HomeStack() {
       <Stack.Screen name="RequestDetails" component={RequestDetailsScreen} options={{ title: t('nav.requestDetails') }} />
       <Stack.Screen name="Rating" component={RatingScreen} options={{ title: t('nav.rating') }} />
       <Stack.Screen name="Chat" component={ChatScreen} options={{ title: t('nav.chat') }} />
+      <Stack.Screen name="OfferChat" component={OfferChatScreen} options={{ title: t('offers.privateChat') }} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: t('nav.notifications') }} />
     </Stack.Navigator>
   );

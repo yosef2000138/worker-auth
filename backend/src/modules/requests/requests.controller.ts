@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import * as service from './requests.service';
+import * as offersService from './offers.service';
 import * as reviewsService from '../reviews/reviews.service';
 import { RequestStatus } from '@prisma/client';
 
@@ -102,6 +103,95 @@ export async function cancel(req: Request, res: Response, next: NextFunction) {
       req.body.reason,
     );
     res.json({ success: true, data: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/v1/requests/:requestId/offers
+export async function listOffers(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await offersService.listOffers(
+      req.params.requestId,
+      req.user!.sub,
+      req.user!.role as 'CUSTOMER' | 'WORKER' | 'ADMIN',
+    );
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/v1/requests/:requestId/offers
+export async function createOffer(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await offersService.createOffer(
+      req.params.requestId,
+      req.user!.sub,
+      req.body,
+    );
+    res.status(201).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/v1/requests/:requestId/offers/:offerId/confirm
+export async function confirmOffer(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await offersService.confirmOffer(
+      req.params.requestId,
+      req.params.offerId,
+      req.user!.sub,
+    );
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/v1/requests/:requestId/offers/:offerId/withdraw
+export async function withdrawOffer(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await offersService.withdrawOffer(
+      req.params.requestId,
+      req.params.offerId,
+      req.user!.sub,
+    );
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/v1/requests/:requestId/offers/:offerId/messages
+export async function listOfferMessages(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await offersService.listOfferMessages(
+      req.params.requestId,
+      req.params.offerId,
+      req.user!.sub,
+      {
+        before: req.query.before as string | undefined,
+        limit: Number(req.query.limit ?? 50),
+      },
+    );
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/v1/requests/:requestId/offers/:offerId/messages
+export async function sendOfferMessage(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await offersService.sendOfferMessage(
+      req.params.requestId,
+      req.params.offerId,
+      req.user!.sub,
+      req.body,
+    );
+    res.status(201).json({ success: true, data: result });
   } catch (err) {
     next(err);
   }

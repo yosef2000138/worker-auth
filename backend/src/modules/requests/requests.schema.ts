@@ -40,6 +40,10 @@ export const idParamSchema = z.object({
   params: z.object({ id: uuidSchema }),
 });
 
+export const requestIdParamSchema = z.object({
+  params: z.object({ requestId: uuidSchema }),
+});
+
 export const cancelSchema = z.object({
   params: z.object({ id: uuidSchema }),
   body: z.object({
@@ -54,3 +58,35 @@ export const createRequestReviewSchema = z.object({
     comment: z.string().max(1000).trim().optional(),
   }),
 });
+
+export const createOfferSchema = z.object({
+  params: z.object({ requestId: uuidSchema }),
+  body: z.object({
+    proposedPrice: z.coerce.number().positive().optional(),
+    message: z.string().min(1).max(1000).trim().optional(),
+    availableAt: z.string().datetime().optional(),
+    estimatedDuration: z.string().max(120).trim().optional(),
+  }),
+});
+
+export const offerParamSchema = z.object({
+  params: z.object({ requestId: uuidSchema, offerId: uuidSchema }),
+});
+
+export const listOfferMessagesSchema = z.object({
+  params: z.object({ requestId: uuidSchema, offerId: uuidSchema }),
+  query: z.object({
+    before: z.string().datetime().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  }),
+});
+
+export const sendOfferMessageSchema = z.object({
+  params: z.object({ requestId: uuidSchema, offerId: uuidSchema }),
+  body: z.object({
+    content: z.string().min(1).max(2000).trim(),
+  }),
+});
+
+export type CreateOfferInput = z.infer<typeof createOfferSchema>['body'];
+export type SendOfferMessageInput = z.infer<typeof sendOfferMessageSchema>['body'];

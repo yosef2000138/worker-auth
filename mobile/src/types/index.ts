@@ -1,5 +1,6 @@
 export type Role = 'CUSTOMER' | 'WORKER' | 'ADMIN';
 export type RequestStatus = 'PENDING' | 'ACCEPTED' | 'ON_THE_WAY' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+export type RequestOfferStatus = 'SUBMITTED' | 'DISCUSSING' | 'SELECTED' | 'NOT_SELECTED' | 'WITHDRAWN' | 'EXPIRED';
 export type PaymentMethod = 'ONLINE' | 'CASH';
 
 export type ApiEnvelope<T> = { success: boolean; data: T; message?: string };
@@ -81,6 +82,30 @@ export type ServiceRequest = {
 };
 
 export type Message = { id: string; requestId: string; senderId: string; content: string; readAt?: string | null; createdAt: string; sender?: User };
+export type RequestOffer = {
+  id: string;
+  requestId: string;
+  workerId: string;
+  proposedPrice?: number | string | null;
+  message?: string | null;
+  availableAt?: string | null;
+  estimatedDuration?: string | null;
+  status: RequestOfferStatus;
+  createdAt: string;
+  updatedAt?: string;
+  worker?: WorkerProfile;
+};
+export type OfferMessage = {
+  id: string;
+  offerId: string;
+  senderId: string;
+  content: string;
+  isRead?: boolean;
+  createdAt: string;
+  sender?: User;
+};
+export type RequestOffersResponse = { items: RequestOffer[]; limit: number; count: number };
+export type ConfirmOfferResponse = { request: ServiceRequest; offer: RequestOffer; workerAccess?: WorkerAcceptanceAccess };
 export type NotificationItem = { id: string; title?: string; body?: string; message?: string; isRead?: boolean; createdAt?: string };
 export type Review = {
   id: string;
@@ -177,6 +202,7 @@ export type RootStackParamList = {
   RequestDetails: { requestId: string };
   Rating: { requestId: string };
   Chat: { requestId: string };
+  OfferChat: { requestId: string; offerId: string };
   Notifications: undefined;
   Favorites: undefined;
   Profile: undefined;
