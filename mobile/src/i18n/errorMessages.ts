@@ -16,7 +16,16 @@ export const apiErrorCodeTranslationKeys: Record<string, TranslationKey> = {
   OFFER_ALREADY_EXISTS: 'offers.errorAlreadyExists',
   OFFER_CONVERSATION_CLOSED: 'offers.errorClosed',
   OFFER_LIMIT_REACHED: 'offers.errorLimitReached',
+  OFFER_NOT_ACTIVE: 'offers.errorOfferNotActive',
+  OFFER_NOT_SELECTABLE: 'offers.errorOfferNotActive',
+  REQUEST_ALREADY_ASSIGNED: 'offers.errorRequestAssigned',
   REQUEST_NOT_OPEN_FOR_OFFERS: 'offers.errorRequestNotOpen',
+  REQUEST_NOT_PENDING: 'offers.errorRequestNotPending',
+  WORKER_CATEGORY_MISMATCH: 'offers.errorCategoryMismatch',
+  WORKER_NOT_ELIGIBLE: 'offers.errorWorkerNotEligible',
+  WORKER_OUTSIDE_SERVICE_AREA: 'offers.errorOutsideServiceArea',
+  WORKER_PROFILE_NOT_ACCESSIBLE: 'offers.errorProfileNotAccessible',
+  WORKER_UNAVAILABLE: 'offers.errorWorkerUnavailable',
 };
 
 export const apiErrorMessageTranslationKeys: Record<string, TranslationKey> = {

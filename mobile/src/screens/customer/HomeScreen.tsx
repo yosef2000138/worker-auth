@@ -22,7 +22,7 @@ export default function HomeScreen({ navigation }: Props) {
         </Stack>
         <Row gap={spacing.sm} wrap>
           <Button title={t('customer.home.create')} fullWidth={false} style={styles.quickAction} onPress={() => navigation.navigate('CreateRequest')} />
-          <Button title={t('customer.home.workers')} fullWidth={false} variant="outline" style={styles.quickAction} onPress={() => navigation.navigate('WorkerSearch')} />
+          <Button title={t('customer.home.browseCategories')} fullWidth={false} variant="outline" style={styles.quickAction} onPress={() => navigation.navigate('Categories')} />
           <Button title={t('common.map')} fullWidth={false} variant="outline" style={styles.quickAction} onPress={() => navigation.navigate('Map')} />
         </Row>
         <Button title={t('nav.notifications')} variant="ghost" onPress={() => navigation.navigate('Notifications')} />

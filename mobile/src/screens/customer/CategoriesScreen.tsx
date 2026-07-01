@@ -46,7 +46,7 @@ export default function CategoriesScreen({ navigation }: Props) {
             const categoryName = getLocalizedCategoryName(item, language.code, t);
             return (
               <Pressable
-                onPress={() => navigation.navigate('WorkerSearch', { categoryId: item.id })}
+                onPress={() => navigation.navigate('CreateRequest', { categoryId: item.id })}
                 style={({ pressed }) => pressed ? { opacity: 0.75 } : undefined}
               >
                 <Card>

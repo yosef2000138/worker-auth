@@ -1,18 +1,18 @@
 import { Prisma, RequestOfferStatus } from '@prisma/client';
 import { db } from '../../config/database';
 import { env } from '../../config/env';
-import { pushToUser } from '../../utils/fcm';
 import { getIO } from '../../sockets';
-import {
-  getWorkerAcceptanceAccess,
-  WorkerAcceptanceAccess,
-} from '../subscriptions/subscriptions.service';
+import { dispatchNotification } from '../../jobs/notificationJob';
+import { getWorkerAcceptanceAccess, WorkerAcceptanceAccess } from '../subscriptions/subscriptions.service';
 import { requestReviewSelect } from '../reviews/reviews.service';
 import { CreateOfferInput, SendOfferMessageInput } from './requests.schema';
+import {
+  ACTIVE_OFFER_STATUSES,
+  addOfferMetaToRequests,
+  assertWorkerEligibleForRequest,
+} from './requestMatching.service';
 
 type ActorRole = 'CUSTOMER' | 'WORKER' | 'ADMIN';
-
-const OPEN_OFFER_STATUSES: RequestOfferStatus[] = ['SUBMITTED', 'DISCUSSING'];
 
 const requestSelect = {
   id: true,
@@ -103,35 +103,10 @@ function emitToUser(userId: string, event: string, payload: unknown) {
   }
 }
 
-async function findWorkerForUser(
-  client: Prisma.TransactionClient | typeof db,
-  userId: string,
-) {
-  return client.worker.findUnique({
-    where: { userId },
-    select: {
-      id: true,
-      userId: true,
-      approvedAt: true,
-      isAvailable: true,
-      categories: { select: { categoryId: true } },
-    },
-  });
-}
-
-function assertWorkerEligible(worker: Awaited<ReturnType<typeof findWorkerForUser>>, categoryId: string) {
-  if (!worker) throw apiError(404, 'WORKER_PROFILE_NOT_FOUND', 'Worker profile not found');
-  if (!worker.approvedAt) throw apiError(403, 'WORKER_NOT_APPROVED', 'Worker not yet approved');
-  if (!worker.isAvailable) throw apiError(403, 'WORKER_NOT_AVAILABLE', 'Worker is not available for new offers');
-  if (!worker.categories.some(item => item.categoryId === categoryId)) {
-    throw apiError(403, 'WORKER_CATEGORY_MISMATCH', 'Worker does not match this service category');
-  }
-}
-
 export async function listOffers(requestId: string, userId: string, role: ActorRole) {
   const request = await db.serviceRequest.findUnique({
     where: { id: requestId },
-    select: { id: true, customerId: true },
+    select: { id: true, customerId: true, status: true, workerId: true },
   });
   if (!request) throw apiError(404, 'REQUEST_NOT_FOUND', 'Request not found');
 
@@ -142,18 +117,34 @@ export async function listOffers(requestId: string, userId: string, role: ActorR
       select: offerSelect,
       orderBy: { createdAt: 'asc' },
     });
-    return { items: offers, limit: env.MAX_OFFERS_PER_REQUEST, count: offers.length };
+    const activeCount = await db.requestOffer.count({
+      where: { requestId, status: { in: ACTIVE_OFFER_STATUSES } },
+    });
+    return {
+      items: offers,
+      limit: env.MAX_OFFERS_PER_REQUEST,
+      count: activeCount,
+      offersOpen: request.status === 'PENDING' && !request.workerId && activeCount < env.MAX_OFFERS_PER_REQUEST,
+    };
   }
 
   if (role === 'WORKER') {
-    const worker = await findWorkerForUser(db, userId);
+    const worker = await db.worker.findUnique({ where: { userId }, select: { id: true } });
     if (!worker) throw apiError(404, 'WORKER_PROFILE_NOT_FOUND', 'Worker profile not found');
     const offers = await db.requestOffer.findMany({
       where: { requestId, workerId: worker.id },
       select: offerSelect,
       orderBy: { createdAt: 'asc' },
     });
-    return { items: offers, limit: env.MAX_OFFERS_PER_REQUEST, count: offers.length };
+    const activeCount = await db.requestOffer.count({
+      where: { requestId, status: { in: ACTIVE_OFFER_STATUSES } },
+    });
+    return {
+      items: offers,
+      limit: env.MAX_OFFERS_PER_REQUEST,
+      count: activeCount,
+      offersOpen: request.status === 'PENDING' && !request.workerId && activeCount < env.MAX_OFFERS_PER_REQUEST,
+    };
   }
 
   throw apiError(403, 'OFFERS_NOT_ALLOWED', 'Offers are only available to customers and workers');
@@ -172,6 +163,7 @@ export async function createOffer(requestId: string, userId: string, input: Crea
           workerId: true,
           categoryId: true,
           status: true,
+          scheduledAt: true,
         },
       });
       if (!request) throw apiError(404, 'REQUEST_NOT_FOUND', 'Request not found');
@@ -182,28 +174,19 @@ export async function createOffer(requestId: string, userId: string, input: Crea
         throw apiError(409, 'REQUEST_NOT_OPEN_FOR_OFFERS', 'Request is not open for offers');
       }
 
-      const worker = await findWorkerForUser(tx, userId);
-      assertWorkerEligible(worker, request.categoryId);
-
-      const access = await getWorkerAcceptanceAccess(userId, tx, worker!.id);
-      if (!access.canAcceptMoreRequests) {
-        throw apiError(
-          402,
-          'WORKER_SUBSCRIPTION_REQUIRED',
-          'An active Worker Pro subscription is required to submit more offers.',
-          access,
-        );
-      }
+      const { worker, access } = await assertWorkerEligibleForRequest(tx, userId, request);
 
       const [existing, offerCount] = await Promise.all([
-        tx.requestOffer.findUnique({
-          where: { requestId_workerId: { requestId, workerId: worker!.id } },
+        tx.requestOffer.findFirst({
+          where: { requestId, workerId: worker.id, status: { in: ACTIVE_OFFER_STATUSES } },
           select: { id: true },
         }),
-        tx.requestOffer.count({ where: { requestId } }),
+        tx.requestOffer.count({
+          where: { requestId, status: { in: ACTIVE_OFFER_STATUSES } },
+        }),
       ]);
 
-      if (existing) throw apiError(409, 'OFFER_ALREADY_EXISTS', 'You already sent an offer for this request');
+      if (existing) throw apiError(409, 'OFFER_ALREADY_EXISTS', 'You already have an active offer for this request');
       if (offerCount >= env.MAX_OFFERS_PER_REQUEST) {
         throw apiError(409, 'OFFER_LIMIT_REACHED', 'This request already has the maximum number of offers');
       }
@@ -211,7 +194,7 @@ export async function createOffer(requestId: string, userId: string, input: Crea
       const offer = await tx.requestOffer.create({
         data: {
           requestId,
-          workerId: worker!.id,
+          workerId: worker.id,
           proposedPrice: input.proposedPrice,
           message: input.message,
           availableAt: input.availableAt ? new Date(input.availableAt) : undefined,
@@ -223,12 +206,18 @@ export async function createOffer(requestId: string, userId: string, input: Crea
       return { offer, customerId: request.customerId, workerAccess: access };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
-    pushToUser(result.customerId, 'New worker offer', 'A worker sent an offer for your request.', { requestId, offerId: result.offer.id }).catch(() => {});
+    dispatchNotification({
+      userId: result.customerId,
+      type: 'NEW_OFFER_RECEIVED',
+      title: 'New offer received',
+      body: 'A worker sent an offer for your request.',
+      data: { requestId, offerId: result.offer.id },
+    }).catch(() => {});
     emitToUser(result.customerId, 'request.offer.created', result.offer);
     return result;
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      throw apiError(409, 'OFFER_ALREADY_EXISTS', 'You already sent an offer for this request');
+      throw apiError(409, 'OFFER_ALREADY_EXISTS', 'You already have an active offer for this request');
     }
     throw error;
   }
@@ -312,7 +301,13 @@ export async function sendOfferMessage(
   });
 
   const recipientId = participant.isCustomer ? offer.worker.userId : offer.request.customerId;
-  pushToUser(recipientId, 'New offer message', 'You have a new private message about an offer.', { requestId, offerId }).catch(() => {});
+  dispatchNotification({
+    userId: recipientId,
+    type: 'NEW_OFFER_MESSAGE',
+    title: 'New offer message',
+    body: 'You have a new private message about an offer.',
+    data: { requestId, offerId },
+  }).catch(() => {});
   emitToUser(recipientId, 'request.offer.message.created', { requestId, offerId, message });
   return message;
 }
@@ -322,7 +317,7 @@ export async function withdrawOffer(requestId: string, offerId: string, userId: 
   if (offer.worker.userId !== userId) {
     throw apiError(403, 'OFFER_NOT_ACCESSIBLE', 'You cannot withdraw this offer');
   }
-  if (!OPEN_OFFER_STATUSES.includes(offer.status)) {
+  if (!ACTIVE_OFFER_STATUSES.includes(offer.status)) {
     throw apiError(409, 'OFFER_CANNOT_BE_WITHDRAWN', 'This offer can no longer be withdrawn');
   }
 
@@ -332,7 +327,13 @@ export async function withdrawOffer(requestId: string, offerId: string, userId: 
     select: offerSelect,
   });
 
-  pushToUser(offer.request.customerId, 'Offer withdrawn', 'A worker withdrew their offer.', { requestId, offerId }).catch(() => {});
+  dispatchNotification({
+    userId: offer.request.customerId,
+    type: 'OFFER_WITHDRAWN',
+    title: 'Offer withdrawn',
+    body: 'A worker withdrew their offer.',
+    data: { requestId, offerId },
+  }).catch(() => {});
   emitToUser(offer.request.customerId, 'request.offer.withdrawn', updated);
   return updated;
 }
@@ -349,7 +350,14 @@ export async function confirmOffer(requestId: string, offerId: string, customerI
 
     const request = await tx.serviceRequest.findUnique({
       where: { id: requestId },
-      select: { id: true, customerId: true, status: true, workerId: true },
+      select: {
+        id: true,
+        customerId: true,
+        categoryId: true,
+        scheduledAt: true,
+        status: true,
+        workerId: true,
+      },
     });
     if (!request) throw apiError(404, 'REQUEST_NOT_FOUND', 'Request not found');
     if (request.customerId !== customerId) throw apiError(403, 'NOT_YOUR_REQUEST', 'Not your request');
@@ -360,24 +368,15 @@ export async function confirmOffer(requestId: string, offerId: string, customerI
     const offer = await tx.requestOffer.findUnique({
       where: { id: offerId },
       include: {
-        worker: { select: { id: true, userId: true, approvedAt: true, isAvailable: true } },
+        worker: { select: { id: true, userId: true } },
       },
     });
     if (!offer || offer.requestId !== requestId) throw apiError(404, 'OFFER_NOT_FOUND', 'Offer not found');
-    if (!OPEN_OFFER_STATUSES.includes(offer.status)) {
-      throw apiError(409, 'OFFER_NOT_SELECTABLE', 'This offer can no longer be selected');
+    if (!ACTIVE_OFFER_STATUSES.includes(offer.status)) {
+      throw apiError(409, 'OFFER_NOT_ACTIVE', 'This offer can no longer be selected');
     }
-    if (!offer.worker.approvedAt) throw apiError(403, 'WORKER_NOT_APPROVED', 'Worker not yet approved');
 
-    const access = await getWorkerAcceptanceAccess(offer.worker.userId, tx, offer.worker.id);
-    if (!access.canAcceptMoreRequests) {
-      throw apiError(
-        402,
-        'WORKER_SUBSCRIPTION_REQUIRED',
-        'An active Worker Pro subscription is required to accept this worker.',
-        access,
-      );
-    }
+    const { access } = await assertWorkerEligibleForRequest(tx, offer.worker.userId, request);
 
     const assigned = await tx.serviceRequest.updateMany({
       where: { id: requestId, status: 'PENDING', workerId: null },
@@ -400,7 +399,7 @@ export async function confirmOffer(requestId: string, offerId: string, customerI
       where: {
         requestId,
         id: { not: offerId },
-        status: { in: OPEN_OFFER_STATUSES },
+        status: { in: ACTIVE_OFFER_STATUSES },
       },
       select: { id: true, worker: { select: { userId: true } } },
     });
@@ -409,7 +408,7 @@ export async function confirmOffer(requestId: string, offerId: string, customerI
       where: {
         requestId,
         id: { not: offerId },
-        status: { in: OPEN_OFFER_STATUSES },
+        status: { in: ACTIVE_OFFER_STATUSES },
       },
       data: { status: 'NOT_SELECTED' },
     });
@@ -432,9 +431,10 @@ export async function confirmOffer(requestId: string, offerId: string, customerI
       select: offerSelect,
     });
     if (!updatedRequest || !selectedOffer) throw apiError(404, 'REQUEST_NOT_FOUND', 'Request not found');
+    const [requestWithMeta] = await addOfferMetaToRequests(tx, [updatedRequest]);
 
     return {
-      request: updatedRequest,
+      request: requestWithMeta,
       offer: selectedOffer,
       workerAccess,
       selectedWorkerUserId: offer.worker.userId,
@@ -442,12 +442,26 @@ export async function confirmOffer(requestId: string, offerId: string, customerI
     };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
-  pushToUser(result.selectedWorkerUserId, 'Your offer was selected', 'The customer selected your offer.', { requestId, offerId }).catch(() => {});
+  dispatchNotification({
+    userId: result.selectedWorkerUserId,
+    type: 'OFFER_SELECTED',
+    title: 'Your offer was selected',
+    body: 'The customer selected your offer.',
+    data: { requestId, offerId },
+  }).catch(() => {});
   emitToUser(result.selectedWorkerUserId, 'request.offer.selected', { requestId, offerId });
   emitToUser(customerId, 'request.accepted', result.request);
+  emitToUser(customerId, 'request.offers.closed', { requestId, selectedOfferId: offerId });
   result.notSelectedUserIds.forEach(workerUserId => {
-    pushToUser(workerUserId, 'Customer selected another worker', 'The customer selected another worker for this request.', { requestId }).catch(() => {});
+    dispatchNotification({
+      userId: workerUserId,
+      type: 'OFFER_NOT_SELECTED',
+      title: 'Customer selected another worker',
+      body: 'The customer selected another worker for this request.',
+      data: { requestId },
+    }).catch(() => {});
     emitToUser(workerUserId, 'request.offer.not_selected', { requestId });
+    emitToUser(workerUserId, 'request.offers.closed', { requestId, selectedOfferId: offerId });
   });
 
   return {
@@ -461,7 +475,7 @@ export async function closeOffersForCancelledRequest(requestId: string) {
   const offers = await db.requestOffer.findMany({
     where: {
       requestId,
-      status: { in: OPEN_OFFER_STATUSES },
+      status: { in: ACTIVE_OFFER_STATUSES },
     },
     select: { id: true, worker: { select: { userId: true } } },
   });
@@ -469,13 +483,20 @@ export async function closeOffersForCancelledRequest(requestId: string) {
   await db.requestOffer.updateMany({
     where: {
       requestId,
-      status: { in: OPEN_OFFER_STATUSES },
+      status: { in: ACTIVE_OFFER_STATUSES },
     },
     data: { status: 'EXPIRED' },
   });
 
   offers.forEach(offer => {
-    pushToUser(offer.worker.userId, 'Request cancelled', 'The customer cancelled this request.', { requestId, offerId: offer.id }).catch(() => {});
+    dispatchNotification({
+      userId: offer.worker.userId,
+      type: 'REQUEST_CANCELLED',
+      title: 'Request cancelled',
+      body: 'The customer cancelled this request.',
+      data: { requestId, offerId: offer.id },
+    }).catch(() => {});
     emitToUser(offer.worker.userId, 'request.canceled', { requestId, offerId: offer.id });
+    emitToUser(offer.worker.userId, 'request.offers.closed', { requestId, offerId: offer.id });
   });
 }

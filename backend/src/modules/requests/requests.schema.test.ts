@@ -1,12 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createOfferSchema, createRequestReviewSchema, listOfferMessagesSchema } from './requests.schema';
+import {
+  createOfferSchema,
+  createRequestReviewSchema,
+  createRequestSchema,
+  listOfferMessagesSchema,
+} from './requests.schema';
 
 const params = { id: '11111111-1111-4111-8111-111111111111' };
 const offerParams = {
   requestId: '11111111-1111-4111-8111-111111111111',
   offerId: '22222222-2222-4222-8222-222222222222',
 };
+
+const validRequestBody = {
+  categoryId: '33333333-3333-4333-8333-333333333333',
+  title: 'Electrical outlet repair',
+  description: 'Two kitchen outlets stopped working and need inspection.',
+  lat: 32.0853,
+  lng: 34.7818,
+  address: 'Dizengoff Street, Tel Aviv',
+  paymentMethod: 'CASH',
+};
+
+test('create request schema accepts request-first payload without worker assignment', () => {
+  const parsed = createRequestSchema.parse({ body: validRequestBody });
+
+  assert.equal(parsed.body.title, 'Electrical outlet repair');
+  assert.equal(Object.prototype.hasOwnProperty.call(parsed.body, 'workerId'), false);
+});
+
+test('create request schema rejects direct worker assignment fields', () => {
+  for (const field of ['workerId', 'selectedWorkerId', 'assignedWorkerId']) {
+    const parsed = createRequestSchema.safeParse({
+      body: { ...validRequestBody, [field]: '44444444-4444-4444-8444-444444444444' },
+    });
+
+    assert.equal(parsed.success, false, `${field} should be rejected`);
+  }
+});
 
 test('request review schema accepts a 1 through 5 star rating', () => {
   for (const rating of [1, 2, 3, 4, 5]) {

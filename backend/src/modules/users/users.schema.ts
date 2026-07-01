@@ -23,11 +23,5 @@ export const changePasswordSchema = z.object({
   }),
 });
 
-export const toggleFavoriteSchema = z.object({
-  params: z.object({
-    workerId: z.string().uuid(),
-  }),
-});
-
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>['body'];
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>['body'];

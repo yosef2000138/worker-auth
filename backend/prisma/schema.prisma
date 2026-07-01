@@ -252,9 +252,9 @@ model RequestOffer {
   worker   Worker         @relation(fields: [workerId], references: [id], onDelete: Cascade)
   messages OfferMessage[]
 
-  @@unique([requestId, workerId])
   @@index([requestId, status, createdAt])
   @@index([workerId, status, createdAt])
+  @@index([requestId, workerId, status])
   @@map("request_offers")
 }
 

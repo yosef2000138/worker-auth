@@ -176,20 +176,38 @@ export default function IncomingRequestsScreen() {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
-          renderItem={({ item }) => (
-            <Card>
-              <Stack gap={spacing.md}>
+          renderItem={({ item }) => {
+            const offerCount = item.offerCount ?? 0;
+            const maxOffers = item.maxOffers ?? 5;
+            const hasMyOffer = Boolean(item.hasMyOffer && item.myOfferId);
+            const offerLimitReached = item.offersOpen === false && !hasMyOffer;
+            const primaryOfferTitle = hasMyOffer
+              ? t('offers.chatWithWorker')
+              : offerLimitReached
+              ? t('offers.limitReachedShort')
+              : offerBlocked
+              ? t('subscription.subscribeToAccept')
+              : editingOfferId === item.id
+              ? t('offers.sendOffer')
+              : t('offers.makeOffer');
+
+            return (
+              <Card>
+                <Stack gap={spacing.md}>
                 <Row justify="space-between" align="flex-start">
                   <Stack gap={spacing.xs} style={{ flex: 1 }}>
                     <Body weight="bold">{item.title}</Body>
                     <BodySm color={colors.textSecondary}>{item.category ? getLocalizedCategoryName(item.category, language.code, t) : t('worker.requests.serviceRequest')}</BodySm>
                     {item.createdAt ? <BodySm color={colors.textTertiary}>{formatAppDate(item.createdAt, locale)}</BodySm> : null}
+                    <BodySm color={colors.textSecondary}>{t('offers.count', { count: offerCount, limit: maxOffers })}</BodySm>
                   </Stack>
                   <StatusBadge status={item.status} />
                 </Row>
                 <BodySm color={colors.textSecondary}>{item.description}</BodySm>
+                {hasMyOffer ? <Banner tone="success" message={t('offers.alreadySent')} /> : null}
+                {offerLimitReached ? <Banner tone="warning" message={t('offers.errorLimitReached')} /> : null}
                 <MapPreview address={item.address} lat={item.lat} lng={item.lng} />
-                {editingOfferId === item.id ? (
+                {editingOfferId === item.id && !hasMyOffer ? (
                   <Card style={styles.offerForm}>
                     <Stack gap={spacing.sm}>
                       <Body weight="bold">{t('offers.makeOffer')}</Body>
@@ -248,19 +266,30 @@ export default function IncomingRequestsScreen() {
                     })}
                   />
                   <Button
-                    title={offerBlocked ? t('subscription.subscribeToAccept') : editingOfferId === item.id ? t('offers.sendOffer') : t('offers.makeOffer')}
+                    title={primaryOfferTitle}
                     fullWidth={false}
                     style={styles.requestAction}
                     icon={offerBlocked ? <Ionicons name="lock-closed-outline" size={16} color={colors.textInverse} /> : undefined}
                     loading={offeringId === item.id}
-                    disabled={sendOffer.isPending && offeringId !== item.id}
+                    disabled={(sendOffer.isPending && offeringId !== item.id) || offerLimitReached}
                     accessibilityLabel={offerBlocked ? t('subscription.subscribeToAcceptA11y') : t('offers.sendOffer')}
-                    onPress={() => editingOfferId === item.id ? handleSendOffer(item.id) : beginOffer(item.id)}
+                    onPress={() => {
+                      if (hasMyOffer && item.myOfferId) {
+                        navigation.navigate('OfferChat', { requestId: item.id, offerId: item.myOfferId });
+                        return;
+                      }
+                      if (editingOfferId === item.id) {
+                        handleSendOffer(item.id);
+                        return;
+                      }
+                      beginOffer(item.id);
+                    }}
                   />
                 </Row>
               </Stack>
             </Card>
-          )}
+          );
+          }}
         />
       )}
       <WorkerProRequiredModal

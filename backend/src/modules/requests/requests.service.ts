@@ -5,6 +5,12 @@ import { pushToUser } from '../../utils/fcm';
 import { WorkerAcceptanceAccess } from '../subscriptions/subscriptions.service';
 import { requestReviewSelect } from '../reviews/reviews.service';
 import { closeOffersForCancelledRequest } from './offers.service';
+import {
+  ACTIVE_OFFER_STATUSES,
+  addOfferMetaToRequests,
+  buildIncomingRequestWhereForWorker,
+  notifyEligibleWorkersForRequest,
+} from './requestMatching.service';
 
 // ─── FSM ─────────────────────────────────────────────────────────────────────
 type Actor = 'CUSTOMER' | 'WORKER';
@@ -101,6 +107,32 @@ function pushStatusNotification(
   }
 }
 
+async function addWorkerOfferState<T extends { id: string }>(items: T[], workerId: string) {
+  if (items.length === 0) return items;
+  const offers = await db.requestOffer.findMany({
+    where: {
+      workerId,
+      requestId: { in: items.map(item => item.id) },
+    },
+    select: { id: true, requestId: true, status: true },
+  });
+  const offerByRequest = new Map(
+    offers
+      .filter(offer => ACTIVE_OFFER_STATUSES.includes(offer.status))
+      .map(offer => [offer.requestId, offer]),
+  );
+
+  return items.map(item => {
+    const offer = offerByRequest.get(item.id);
+    return {
+      ...item,
+      hasMyOffer: Boolean(offer),
+      myOfferId: offer?.id ?? null,
+      myOfferStatus: offer?.status ?? null,
+    };
+  });
+}
+
 // ─── Create ───────────────────────────────────────────────────────────────────
 export async function createRequest(
   customerId: string,
@@ -165,7 +197,17 @@ export async function createRequest(
     select: requestSelect,
   });
 
-  return request;
+  void notifyEligibleWorkersForRequest({
+    id: request.id,
+    customerId,
+    categoryId: body.categoryId,
+    title: request.title,
+    scheduledAt: request.scheduledAt,
+    category: request.category,
+  }).catch(() => {});
+
+  const [requestWithMeta] = await addOfferMetaToRequests(db, [request]);
+  return requestWithMeta;
 }
 
 // ─── List ─────────────────────────────────────────────────────────────────────
@@ -178,17 +220,12 @@ export async function listRequests(
   const skip = (page - 1) * limit;
 
   let where: Prisma.ServiceRequestWhereInput;
+  let workerIdForOfferState: string | null = null;
 
   if (role === 'CUSTOMER') {
     where = { customerId: userId, ...(status && { status }) };
   } else {
-    const worker = await db.worker.findUnique({
-      where: { userId },
-      select: {
-        id: true,
-        categories: { select: { categoryId: true } },
-      },
-    });
+    const worker = await db.worker.findUnique({ where: { userId }, select: { id: true } });
 
     if (!worker) {
       return {
@@ -197,21 +234,17 @@ export async function listRequests(
       };
     }
 
-    const workerCategoryIds = worker.categories.map(item => item.categoryId);
-    const openForOffer: Prisma.ServiceRequestWhereInput = {
-      status: 'PENDING',
-      workerId: null,
-      customerId: { not: userId },
-      categoryId: { in: workerCategoryIds },
-    };
+    workerIdForOfferState = worker.id;
+    const openForOffer = await buildIncomingRequestWhereForWorker(db, userId);
+    const impossibleWhere: Prisma.ServiceRequestWhereInput = { id: '__no_matching_requests__' };
 
     where = status === 'PENDING'
-      ? openForOffer
+      ? openForOffer ?? impossibleWhere
       : status
       ? { worker: { userId }, status }
       : {
           OR: [
-            openForOffer,
+            ...(openForOffer ? [openForOffer] : []),
             { worker: { userId } },
             { offers: { some: { workerId: worker.id } } },
           ],
@@ -235,9 +268,13 @@ export async function listRequests(
       canReview: item.status === 'COMPLETED' && Boolean(item.worker) && !item.review && item.worker?.user.id !== userId,
     }))
     : items;
+  const itemsWithOfferMeta = await addOfferMetaToRequests(db, decoratedItems);
+  const itemsWithViewerOfferState = role === 'WORKER' && workerIdForOfferState
+    ? await addWorkerOfferState(itemsWithOfferMeta, workerIdForOfferState)
+    : itemsWithOfferMeta;
 
   return {
-    items: decoratedItems,
+    items: itemsWithViewerOfferState,
     pagination: { total, page, limit, pages: Math.ceil(total / limit) },
   };
 }
@@ -261,18 +298,28 @@ export async function getRequest(id: string, userId: string, role: string) {
     if (!worker) throw { status: 404, message: 'Worker profile not found' };
 
     const isAssignedWorker = request.worker?.user.id === userId;
-    const isOpenIncomingRequest = request.status === 'PENDING' && !request.worker;
     const hasOffer = await db.requestOffer.findFirst({
       where: { requestId: id, workerId: worker.id },
       select: { id: true },
     });
+    let isOpenIncomingRequest = false;
+    if (!isAssignedWorker && !hasOffer && request.status === 'PENDING' && !request.worker) {
+      const incomingWhere = await buildIncomingRequestWhereForWorker(db, userId);
+      if (incomingWhere) {
+        const eligibleRequest = await db.serviceRequest.findFirst({
+          where: { AND: [{ id }, incomingWhere] },
+          select: { id: true },
+        });
+        isOpenIncomingRequest = Boolean(eligibleRequest);
+      }
+    }
 
     if (!isAssignedWorker && !isOpenIncomingRequest && !hasOffer) {
       throw { status: 403, message: 'You cannot access this request' };
     }
   }
 
-  return {
+  const requestWithReviewState = {
     ...request,
     canReview: role === 'CUSTOMER'
       && request.customer.id === userId
@@ -281,6 +328,8 @@ export async function getRequest(id: string, userId: string, role: string) {
       && !request.review
       && request.worker?.user.id !== userId,
   };
+  const [requestWithOfferMeta] = await addOfferMetaToRequests(db, [requestWithReviewState]);
+  return requestWithOfferMeta;
 }
 
 // ─── Update status ────────────────────────────────────────────────────────────
@@ -341,7 +390,8 @@ export async function updateStatus(
 
   pushStatusNotification(id, request, role, newStatus, cancellationReason);
 
-  return updated;
+  const [updatedWithOfferMeta] = await addOfferMetaToRequests(db, [updated]);
+  return updatedWithOfferMeta;
 }
 
 // ─── Cancel ───────────────────────────────────────────────────────────────────

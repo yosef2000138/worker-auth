@@ -5,14 +5,12 @@ import { MessagesHeaderButton } from '@/components/messages/MessagesHeaderButton
 import CategoriesScreen from '@/screens/customer/CategoriesScreen';
 import ChatScreen from '@/screens/customer/ChatScreen';
 import CreateRequestScreen from '@/screens/customer/CreateRequestScreen';
-import FavoritesScreen from '@/screens/customer/FavoritesScreen';
 import HomeScreen from '@/screens/customer/HomeScreen';
 import NotificationsScreen from '@/screens/customer/NotificationsScreen';
 import ProfileScreen from '@/screens/customer/ProfileScreen';
 import RatingScreen from '@/screens/customer/RatingScreen';
 import RequestDetailsScreen from '@/screens/customer/RequestDetailsScreen';
 import WorkerProfileScreen from '@/screens/customer/WorkerProfileScreen';
-import WorkerSearchScreen from '@/screens/customer/WorkerSearchScreen';
 import OfferChatScreen from '@/screens/shared/OfferChatScreen';
 import { RootStackParamList } from '@/types';
 import { useLanguage } from '@/i18n';
@@ -34,7 +32,6 @@ function HomeStack() {
       />
       <Stack.Screen name="Categories" component={CategoriesScreen} options={{ title: t('nav.categories'), headerRight: messagesHeader }} />
       <Stack.Screen name="CreateRequest" component={CreateRequestScreen} options={{ title: t('nav.createRequest') }} />
-      <Stack.Screen name="WorkerSearch" component={WorkerSearchScreen} options={{ title: t('nav.findWorkers'), headerRight: messagesHeader }} />
       <Stack.Screen name="WorkerProfile" component={WorkerProfileScreen} options={{ title: t('nav.workerProfile') }} />
       <Stack.Screen name="RequestDetails" component={RequestDetailsScreen} options={{ title: t('nav.requestDetails') }} />
       <Stack.Screen name="Rating" component={RatingScreen} options={{ title: t('nav.rating') }} />
@@ -50,8 +47,7 @@ export default function CustomerStack() {
 
   return (
     <Tabs.Navigator>
-      <Tabs.Screen name="CustomerHome" component={HomeStack} options={{ title: t('nav.home'), headerShown: false }} />
-      <Tabs.Screen name="Favorites" component={FavoritesScreen} options={{ title: t('nav.favorites'), headerRight: messagesHeader }} />
+      <Tabs.Screen name="CustomerHomeTab" component={HomeStack} options={{ title: t('nav.home'), headerShown: false }} />
       <Tabs.Screen name="Profile" component={ProfileScreen} options={{ title: t('nav.profile'), headerRight: messagesHeader }} />
     </Tabs.Navigator>
   );

@@ -31,36 +31,6 @@ export async function changePassword(req: Request, res: Response, next: NextFunc
   }
 }
 
-// GET /api/v1/users/favorites
-export async function getFavorites(req: Request, res: Response, next: NextFunction) {
-  try {
-    const data = await service.getFavorites(req.user!.sub);
-    res.json({ success: true, data });
-  } catch (err) {
-    next(err);
-  }
-}
-
-// POST /api/v1/users/favorites/:workerId
-export async function addFavorite(req: Request, res: Response, next: NextFunction) {
-  try {
-    const data = await service.addFavorite(req.user!.sub, req.params.workerId);
-    res.status(201).json({ success: true, data });
-  } catch (err) {
-    next(err);
-  }
-}
-
-// DELETE /api/v1/users/favorites/:workerId
-export async function removeFavorite(req: Request, res: Response, next: NextFunction) {
-  try {
-    const data = await service.removeFavorite(req.user!.sub, req.params.workerId);
-    res.json({ success: true, data });
-  } catch (err) {
-    next(err);
-  }
-}
-
 // GET /api/v1/users/history
 export async function getHistory(req: Request, res: Response, next: NextFunction) {
   try {

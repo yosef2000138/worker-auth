@@ -79,6 +79,12 @@ export type ServiceRequest = {
   customer?: User;
   review?: Review | null;
   canReview?: boolean;
+  offerCount?: number;
+  maxOffers?: number;
+  offersOpen?: boolean;
+  hasMyOffer?: boolean;
+  myOfferId?: string | null;
+  myOfferStatus?: RequestOfferStatus | null;
 };
 
 export type Message = { id: string; requestId: string; senderId: string; content: string; readAt?: string | null; createdAt: string; sender?: User };
@@ -104,7 +110,7 @@ export type OfferMessage = {
   createdAt: string;
   sender?: User;
 };
-export type RequestOffersResponse = { items: RequestOffer[]; limit: number; count: number };
+export type RequestOffersResponse = { items: RequestOffer[]; limit: number; count: number; offersOpen?: boolean };
 export type ConfirmOfferResponse = { request: ServiceRequest; offer: RequestOffer; workerAccess?: WorkerAcceptanceAccess };
 export type NotificationItem = { id: string; title?: string; body?: string; message?: string; isRead?: boolean; createdAt?: string };
 export type Review = {
@@ -194,17 +200,16 @@ export type RootStackParamList = {
     title?: string;
     requestId?: string;
   } | undefined;
+  CustomerHomeTab: undefined;
   CustomerHome: undefined;
   Categories: undefined;
   CreateRequest: { categoryId?: string } | undefined;
-  WorkerSearch: { categoryId?: string } | undefined;
   WorkerProfile: { workerId: string };
   RequestDetails: { requestId: string };
   Rating: { requestId: string };
   Chat: { requestId: string };
   OfferChat: { requestId: string; offerId: string };
   Notifications: undefined;
-  Favorites: undefined;
   Profile: undefined;
   WorkerOnboarding: undefined;
   WorkerJobs: undefined;

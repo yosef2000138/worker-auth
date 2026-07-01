@@ -113,64 +113,6 @@ export async function changePassword(userId: string, input: ChangePasswordInput)
   return { message: 'Password changed successfully' };
 }
 
-// ─── Favorites ───────────────────────────────────────────────────────────────
-export async function getFavorites(customerId: string) {
-  const favorites = await db.favorite.findMany({
-    where: { customerId },
-    select: {
-      id: true,
-      worker: {
-        select: {
-          id: true,
-          ratingAvg: true,
-          totalReviews: true,
-          totalJobs: true,
-          isAvailable: true,
-          hourlyRate: true,
-          fixedPrice: true,
-          user: { select: { id: true, fullName: true, avatarUrl: true } },
-          categories: {
-            select: { category: { select: { id: true, name: true, icon: true } } },
-          },
-        },
-      },
-    },
-    orderBy: { id: 'desc' },
-  });
-
-  return favorites.map((f) => ({ favoriteId: f.id, ...f.worker }));
-}
-
-export async function addFavorite(customerId: string, workerId: string) {
-  const worker = await db.worker.findUnique({ where: { id: workerId } });
-  if (!worker) throw { status: 404, message: 'Worker not found' };
-
-  const existing = await db.favorite.findUnique({
-    where: { customerId_workerId: { customerId, workerId } },
-  });
-  if (existing) throw { status: 409, message: 'Already in favorites' };
-
-  const fav = await db.favorite.create({
-    data: { customerId, workerId },
-    select: { id: true, workerId: true, customerId: true },
-  });
-
-  return fav;
-}
-
-export async function removeFavorite(customerId: string, workerId: string) {
-  const existing = await db.favorite.findUnique({
-    where: { customerId_workerId: { customerId, workerId } },
-  });
-  if (!existing) throw { status: 404, message: 'Favorite not found' };
-
-  await db.favorite.delete({
-    where: { customerId_workerId: { customerId, workerId } },
-  });
-
-  return { message: 'Removed from favorites' };
-}
-
 // ─── Request history ─────────────────────────────────────────────────────────
 export async function getRequestHistory(
   userId: string,

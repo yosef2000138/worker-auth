@@ -1,5 +1,5 @@
 import { api, unwrap } from './api';
-import { ServiceRequest, User, WorkerProfile } from '@/types';
+import { ServiceRequest, User } from '@/types';
 
 export type UpdateProfilePayload = {
   fullName?: string;
@@ -13,7 +13,4 @@ export const userService = {
   changePassword: (payload: { currentPassword: string; newPassword: string }) =>
     api.put('/users/change-password', payload).then(r => r.data),
   history: () => api.get('/users/history').then(unwrap<ServiceRequest[]>),
-  favorites: () => api.get('/users/favorites').then(unwrap<WorkerProfile[]>),
-  addFavorite: (workerId: string) => api.post(`/users/favorites/${workerId}`).then(r => r.data),
-  removeFavorite: (workerId: string) => api.delete(`/users/favorites/${workerId}`).then(r => r.data),
 };

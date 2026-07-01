@@ -1,11 +1,9 @@
 import { api, unwrap } from './api';
 import {
   Category,
-  Paginated,
   WorkerReviewsResponse,
   WorkerProfile,
 } from '@/types';
-export type WorkerSearchParams = { categoryId?: string; lat?: number; lng?: number; minRating?: number; maxRate?: number; page?: number; limit?: number; sort?: 'rating' | 'jobs' | 'rate' };
 export type UpdateWorkerProfilePayload = {
   bio?: string | null;
   yearsExp?: number;
@@ -14,7 +12,6 @@ export type UpdateWorkerProfilePayload = {
   workingRadius?: number;
 };
 export const workerService = {
-  search: (params?: WorkerSearchParams) => api.get('/workers', { params }).then(unwrap<Paginated<WorkerProfile>>),
   getOne: (id: string) => api.get(`/workers/${id}`).then(unwrap<WorkerProfile>),
   me: () => api.get('/workers/me').then(unwrap<WorkerProfile>),
   updateMe: (payload: UpdateWorkerProfilePayload) => api.put('/workers/me', payload).then(unwrap<WorkerProfile>),

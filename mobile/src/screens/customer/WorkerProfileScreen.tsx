@@ -1,13 +1,12 @@
 import React from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types';
 import { workerService } from '@/services/workerService';
-import { userService } from '@/services/userService';
 import {
-  Stack, Row, Card, Avatar, Badge, Button, H2, H3, Body, BodySm, Caption,
+  Stack, Row, Card, Avatar, Badge, H2, H3, Body, BodySm, Caption,
   ErrorState, ListSkeleton, Divider,
 } from '@/components/ui';
 import { RatingStars } from '@/components/ui/Rating';
@@ -21,26 +20,13 @@ function dayLabel(dayOfWeek: number, locale: string) {
   return formatAppDate(sunday, locale, { weekday: 'short' });
 }
 
-export default function WorkerProfileScreen({ route, navigation }: Props) {
+export default function WorkerProfileScreen({ route }: Props) {
   const { t, locale, language } = useLanguage();
   const { workerId } = route.params;
-  const queryClient = useQueryClient();
 
   const { data: worker, isLoading, isError, refetch } = useQuery({
     queryKey: ['worker', workerId],
     queryFn: () => workerService.getOne(workerId),
-  });
-
-  const { data: favorites } = useQuery({
-    queryKey: ['favorites'],
-    queryFn: userService.favorites,
-  });
-
-  const isFavorite = favorites?.some(f => f.id === workerId) ?? false;
-
-  const toggleFav = useMutation({
-    mutationFn: () => isFavorite ? userService.removeFavorite(workerId) : userService.addFavorite(workerId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['favorites'] }),
   });
 
   const { data: reviewsData } = useQuery({
@@ -60,11 +46,6 @@ export default function WorkerProfileScreen({ route, navigation }: Props) {
   const ratingLabel = reviewCount > 0 && worker?.ratingAvg != null
     ? worker.ratingAvg.toFixed(1)
     : t('reviews.newWorker');
-  const primaryCategoryId = categories[0]?.id;
-  const openRequest = () => navigation.navigate(
-    'CreateRequest',
-    primaryCategoryId ? { categoryId: primaryCategoryId } : undefined,
-  );
 
   if (isLoading) return <View style={{ padding: spacing.lg }}><ListSkeleton count={3} /></View>;
   if (isError || !worker) return <ErrorState onRetry={refetch} />;
@@ -78,13 +59,6 @@ export default function WorkerProfileScreen({ route, navigation }: Props) {
           <Stack gap={spacing.xs} style={{ flex: 1 }}>
             <Row justify="space-between" align="flex-start">
               <H2 style={{ flex: 1 }}>{worker.user?.fullName ?? t('common.workerRole')}</H2>
-              <Ionicons
-                name={isFavorite ? 'heart' : 'heart-outline'}
-                size={22}
-                color={isFavorite ? colors.danger : colors.textTertiary}
-                onPress={() => toggleFav.mutate()}
-                suppressHighlighting
-              />
             </Row>
             <RatingStars
               rating={worker.ratingAvg ?? 0}
@@ -167,19 +141,6 @@ export default function WorkerProfileScreen({ route, navigation }: Props) {
           </Stack>
         </Card>
       )}
-
-      {/* CTA */}
-      <Stack gap={spacing.sm} style={{ marginTop: spacing.lg }}>
-        <Button
-          title={t('customer.workerProfile.requestThisWorker')}
-          onPress={openRequest}
-        />
-        <Button
-          title={t('customer.workerProfile.createRequestToChat')}
-          variant="outline"
-          onPress={openRequest}
-        />
-      </Stack>
     </ScrollView>
   );
 }

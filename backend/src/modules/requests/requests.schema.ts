@@ -13,7 +13,7 @@ export const createRequestSchema = z.object({
     address:       z.string().min(5).max(500).trim(),
     scheduledAt:   z.string().datetime().optional(),
     paymentMethod: z.enum(['ONLINE', 'CASH']).default('CASH'),
-  }),
+  }).strict(),
 });
 
 export const updateStatusSchema = z.object({

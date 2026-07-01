@@ -142,6 +142,7 @@ export default function RequestDetailsScreen({ route, navigation }: Props) {
   const payment = paymentQuery.data;
   const offers = offersQuery.data?.items ?? [];
   const offerLimit = offersQuery.data?.limit ?? 5;
+  const activeOfferCount = offersQuery.data?.count ?? request.offerCount ?? 0;
   const canChat = Boolean(request.worker && request.status !== 'PENDING' && request.status !== 'CANCELLED');
   const canCall = Boolean(request.worker?.user?.phone);
   const canCancel = ['PENDING', 'ACCEPTED', 'ON_THE_WAY'].includes(request.status);
@@ -225,7 +226,7 @@ export default function RequestDetailsScreen({ route, navigation }: Props) {
             <Stack gap={spacing.xs}>
               <H3>{t('offers.workerOffers')}</H3>
               <BodySm color={colors.textSecondary}>
-                {t('offers.count', { count: offers.length, limit: offerLimit })}
+                {t('offers.count', { count: activeOfferCount, limit: offerLimit })}
               </BodySm>
             </Stack>
             {offersQuery.isLoading ? (
@@ -274,6 +275,17 @@ export default function RequestDetailsScreen({ route, navigation }: Props) {
                             icon={<Ionicons name="chatbubble-outline" size={15} color={colors.textPrimary} />}
                             onPress={() => navigation.navigate('OfferChat', { requestId, offerId: offer.id })}
                           />
+                          {worker ? (
+                            <Button
+                              title={t('common.profile')}
+                              variant="outline"
+                              size="sm"
+                              fullWidth={false}
+                              style={styles.offerAction}
+                              icon={<Ionicons name="person-outline" size={15} color={colors.textPrimary} />}
+                              onPress={() => navigation.navigate('WorkerProfile', { workerId: worker.id })}
+                            />
+                          ) : null}
                           {selectable ? (
                             <Button
                               title={t('offers.chooseWorker')}

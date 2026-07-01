@@ -15,8 +15,8 @@ import {
 
 const router = Router();
 
-// ── Public routes ─────────────────────────────────────────────────────────────
-router.get('/', validate(searchWorkersSchema), controller.search);
+// ── Admin directory route ─────────────────────────────────────────────────────
+router.get('/', authenticate, authorize('ADMIN'), validate(searchWorkersSchema), controller.search);
 
 // ── Worker-only routes ────────────────────────────────────────────────────────
 // IMPORTANT: /me routes must stay before /:id, otherwise Express treats "me" as an id.
@@ -27,9 +27,9 @@ router.put('/me/availability', authenticate, authorize('WORKER'), validate(setAv
 router.patch('/me/availability-status', authenticate, authorize('WORKER'), validate(toggleAvailabilitySchema), controller.toggleAvailability);
 router.get('/me/earnings', authenticate, authorize('WORKER'), controller.getEarnings);
 
-router.get('/:id/reviews', validate(workerReviewsSchema), controller.getReviews);
+router.get('/:id/reviews', authenticate, validate(workerReviewsSchema), controller.getReviews);
 
 // Dynamic id route must be last.
-router.get('/:id', validate(workerIdParamSchema), controller.getOne);
+router.get('/:id', authenticate, validate(workerIdParamSchema), controller.getOne);
 
 export default router;

@@ -105,13 +105,37 @@ export async function searchWorkers(query: {
   };
 }
 
-// ─── Get one worker (public profile) ─────────────────────────────────────────
-export async function getWorker(id: string) {
+type WorkerProfileViewer = { id: string; role: string };
+
+export async function assertCanViewWorkerProfile(workerId: string, viewer: WorkerProfileViewer, workerUserId: string) {
+  if (viewer.role === 'ADMIN') return;
+  if (viewer.role === 'WORKER' && workerUserId === viewer.id) return;
+
+  if (viewer.role === 'CUSTOMER') {
+    const relatedRequest = await db.serviceRequest.findFirst({
+      where: {
+        customerId: viewer.id,
+        OR: [
+          { workerId },
+          { offers: { some: { workerId } } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (relatedRequest) return;
+  }
+
+  throw { status: 403, code: 'WORKER_PROFILE_NOT_ACCESSIBLE', message: 'Worker profile is available only after an offer or assignment' };
+}
+
+// ─── Get one worker (relationship-scoped profile) ────────────────────────────
+export async function getWorker(id: string, viewer: WorkerProfileViewer) {
   const worker = await db.worker.findUnique({
     where: { id },
     select: workerSelect,
   });
   if (!worker) throw { status: 404, message: 'Worker not found' };
+  await assertCanViewWorkerProfile(id, viewer, worker.user.id);
   return worker;
 }
 
