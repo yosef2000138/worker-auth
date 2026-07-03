@@ -23,6 +23,17 @@ const validRequestBody = {
   paymentMethod: 'CASH',
 };
 
+function futureIso(minutes = 60) {
+  return new Date(Date.now() + minutes * 60 * 1000).toISOString();
+}
+
+const validOfferBody = {
+  proposedPrice: 175.5,
+  message: ' I can arrive today. ',
+  availableAt: futureIso(),
+  estimatedDuration: 180,
+};
+
 test('create request schema accepts request-first payload without worker assignment', () => {
   const parsed = createRequestSchema.parse({ body: validRequestBody });
 
@@ -75,25 +86,66 @@ test('request review schema allows an empty optional comment', () => {
   assert.equal(parsed.body.comment, undefined);
 });
 
-test('create offer schema trims message and coerces proposed price', () => {
+test('create offer schema accepts price, duration minutes, future ISO datetime, and trims message', () => {
   const parsed = createOfferSchema.parse({
     params: { requestId: offerParams.requestId },
-    body: {
-      proposedPrice: '175.50',
-      message: ' I can arrive today. ',
-      estimatedDuration: '2 hours',
-    },
+    body: { ...validOfferBody, proposedPrice: '175.50' },
   });
 
   assert.equal(parsed.body.proposedPrice, 175.5);
   assert.equal(parsed.body.message, 'I can arrive today.');
-  assert.equal(parsed.body.estimatedDuration, '2 hours');
+  assert.equal(parsed.body.estimatedDuration, 180);
+  assert.equal(parsed.body.availableAt, validOfferBody.availableAt);
+});
+
+test('create offer schema allows an empty optional message', () => {
+  const parsed = createOfferSchema.parse({
+    params: { requestId: offerParams.requestId },
+    body: { ...validOfferBody, message: '' },
+  });
+
+  assert.equal(parsed.body.message, undefined);
+});
+
+test('create offer schema rejects zero prices', () => {
+  assert.equal(createOfferSchema.safeParse({
+    params: { requestId: offerParams.requestId },
+    body: { ...validOfferBody, proposedPrice: 0 },
+  }).success, false);
 });
 
 test('create offer schema rejects negative prices', () => {
   assert.equal(createOfferSchema.safeParse({
     params: { requestId: offerParams.requestId },
-    body: { proposedPrice: -1 },
+    body: { ...validOfferBody, proposedPrice: -1 },
+  }).success, false);
+});
+
+test('create offer schema rejects zero duration', () => {
+  assert.equal(createOfferSchema.safeParse({
+    params: { requestId: offerParams.requestId },
+    body: { ...validOfferBody, estimatedDuration: 0 },
+  }).success, false);
+});
+
+test('create offer schema rejects invalid date strings', () => {
+  assert.equal(createOfferSchema.safeParse({
+    params: { requestId: offerParams.requestId },
+    body: { ...validOfferBody, availableAt: '17/09/2026' },
+  }).success, false);
+});
+
+test('create offer schema rejects past datetimes', () => {
+  assert.equal(createOfferSchema.safeParse({
+    params: { requestId: offerParams.requestId },
+    body: { ...validOfferBody, availableAt: new Date(Date.now() - 60_000).toISOString() },
+  }).success, false);
+});
+
+test('create offer schema rejects overlong messages', () => {
+  assert.equal(createOfferSchema.safeParse({
+    params: { requestId: offerParams.requestId },
+    body: { ...validOfferBody, message: 'x'.repeat(1001) },
   }).success, false);
 });
 

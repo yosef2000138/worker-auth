@@ -198,7 +198,7 @@ export async function createOffer(requestId: string, userId: string, input: Crea
           proposedPrice: input.proposedPrice,
           message: input.message,
           availableAt: input.availableAt ? new Date(input.availableAt) : undefined,
-          estimatedDuration: input.estimatedDuration,
+          estimatedDuration: String(input.estimatedDuration),
         },
         select: offerSelect,
       });

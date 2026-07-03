@@ -13,14 +13,15 @@ import {
   ServiceRequest,
   CreateReviewResponse,
   ConfirmOfferResponse,
+  WorkerAcceptanceAccess,
 } from '@/types';
 export type CreateRequestPayload = { categoryId: string; title: string; description: string; lat: number; lng: number; address: string; scheduledAt?: string; paymentMethod: PaymentMethod; images?: { uri: string; name?: string; type?: string }[] };
 export type RequestStatusUpdate = Exclude<RequestStatus, 'PENDING'>;
 export type CreateOfferPayload = {
-  proposedPrice?: number;
+  proposedPrice: number;
   message?: string;
-  availableAt?: string;
-  estimatedDuration?: string;
+  availableAt: string;
+  estimatedDuration: number;
 };
 
 function normalizeStatusUpdateResult(data: RequestStatusUpdateResult) {
@@ -42,7 +43,7 @@ export const requestService = {
   cancel: (id: string, reason?: string) => api.post(`/requests/${id}/cancel`, { reason }).then(unwrap<ServiceRequest>),
   offers: (requestId: string) => api.get(`/requests/${requestId}/offers`).then(unwrap<RequestOffersResponse>),
   createOffer: (requestId: string, payload: CreateOfferPayload) =>
-    api.post(`/requests/${requestId}/offers`, payload).then(unwrap<{ offer: RequestOffer; workerAccess?: unknown }>),
+    api.post(`/requests/${requestId}/offers`, payload).then(unwrap<{ offer: RequestOffer; workerAccess?: WorkerAcceptanceAccess }>),
   confirmOffer: (requestId: string, offerId: string) =>
     api.post(`/requests/${requestId}/offers/${offerId}/confirm`).then(unwrap<ConfirmOfferResponse>),
   withdrawOffer: (requestId: string, offerId: string) =>

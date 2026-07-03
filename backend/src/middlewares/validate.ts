@@ -1,6 +1,18 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodSchema, ZodError } from 'zod';
 
+function fieldErrorsFromZod(error: ZodError) {
+  return error.issues.reduce<Record<string, string[]>>((fields, issue) => {
+    const [root, nested, ...rest] = issue.path;
+    const key = root === 'body' && typeof nested === 'string'
+      ? [nested, ...rest].join('.')
+      : issue.path.join('.') || 'form';
+    fields[key] ??= [];
+    fields[key].push(issue.message);
+    return fields;
+  }, {});
+}
+
 export function validate(schema: ZodSchema) {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -17,13 +29,14 @@ export function validate(schema: ZodSchema) {
       next();
     } catch (err) {
       if (err instanceof ZodError) {
-        const errors = err.flatten().fieldErrors;
+        const errors = fieldErrorsFromZod(err);
         res.status(422).json({
           success: false,
-          message: 'Validation failed',
+          message: 'Invalid request data.',
           error: {
             code: 'VALIDATION_ERROR',
-            message: 'Validation failed',
+            message: 'Invalid request data.',
+            fields: errors,
             details: errors,
           },
           errors,

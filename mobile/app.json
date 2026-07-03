@@ -17,7 +17,8 @@
       "package": "com.yosefjirees.workerapp"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      "@react-native-community/datetimepicker"
     ]
   }
 }

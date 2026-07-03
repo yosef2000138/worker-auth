@@ -39,6 +39,14 @@ const offerStatusKeys: Record<RequestOfferStatus, TranslationKey> = {
   EXPIRED: 'offers.status.expired',
 };
 
+function formatOfferDuration(value: string | null | undefined, t: (key: TranslationKey) => string) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes <= 0) return value ?? '';
+  if (minutes % (60 * 24) === 0) return `${minutes / (60 * 24)} ${t('offers.durationUnit.days')}`;
+  if (minutes % 60 === 0) return `${minutes / 60} ${t('offers.durationUnit.hours')}`;
+  return `${minutes} ${t('offers.durationUnit.minutes')}`;
+}
+
 export default function RequestDetailsScreen({ route, navigation }: Props) {
   const { requestId } = route.params;
   const { t, locale } = useLanguage();
@@ -261,7 +269,7 @@ export default function RequestDetailsScreen({ route, navigation }: Props) {
                               {t('offers.proposedPrice')}: <BodySm weight="bold">{formatCurrency(offer.proposedPrice, locale)}</BodySm>
                             </BodySm>
                           ) : null}
-                          {offer.estimatedDuration ? <BodySm color={colors.textSecondary}>{t('offers.duration')}: {offer.estimatedDuration}</BodySm> : null}
+                          {offer.estimatedDuration ? <BodySm color={colors.textSecondary}>{t('offers.duration')}: {formatOfferDuration(offer.estimatedDuration, t)}</BodySm> : null}
                           {offer.availableAt ? <BodySm color={colors.textSecondary}>{t('offers.availableAt')}: {formatAppDate(offer.availableAt, locale)}</BodySm> : null}
                           {offer.message ? <BodySm color={colors.textSecondary}>{offer.message}</BodySm> : null}
                         </Stack>

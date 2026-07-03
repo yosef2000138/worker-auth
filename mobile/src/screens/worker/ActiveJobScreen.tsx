@@ -3,8 +3,9 @@ import { Alert, AppState, RefreshControl, ScrollView, StyleSheet, View } from 'r
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Paginated, RequestStatus, RootStackParamList, ServiceRequest } from '@/types';
+import { Paginated, RequestOfferStatus, RequestStatus, RootStackParamList, ServiceRequest } from '@/types';
 import { requestService, RequestStatusUpdate } from '@/services/requestService';
+import { WorkerOfferActionCard } from '@/components/offers/WorkerOfferActionCard';
 import {
   JobDescriptionCard,
   JobLoadingSkeleton,
@@ -22,6 +23,7 @@ import { Banner, BodySm, Button, Card, EmptyState, H3, Row, Stack } from '@/comp
 import { useLanguage } from '@/i18n';
 import { colors, spacing } from '@/theme';
 import type { TranslationKey } from '@/i18n';
+import { useAuthStore } from '@/store/authStore';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveJob'>;
 
@@ -43,6 +45,16 @@ function getItems(data?: Paginated<ServiceRequest>) {
   return Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
 }
 
+function pickCurrentWorkerOffer(items: { id: string; status: RequestOfferStatus }[]) {
+  const active = items.find(item => item.status === 'SUBMITTED' || item.status === 'DISCUSSING');
+  if (active) return active;
+  const selected = items.find(item => item.status === 'SELECTED');
+  if (selected) return selected;
+  const notSelected = items.find(item => item.status === 'NOT_SELECTED');
+  if (notSelected) return notSelected;
+  return items.at(-1) ?? null;
+}
+
 function successCopy(status: RequestStatusUpdate, t: (key: TranslationKey) => string) {
   if (status === 'ACCEPTED') return t('jobs.success.accepted');
   if (status === 'ON_THE_WAY') return t('jobs.success.onTheWay');
@@ -54,6 +66,7 @@ function successCopy(status: RequestStatusUpdate, t: (key: TranslationKey) => st
 export default function ActiveJobScreen({ route, navigation }: Props) {
   const { t } = useLanguage();
   const queryClient = useQueryClient();
+  const user = useAuthStore(s => s.user);
   const requestId = route.params?.requestId;
   const [successMessage, setSuccessMessage] = React.useState<string | null>(null);
 
@@ -70,6 +83,12 @@ export default function ActiveJobScreen({ route, navigation }: Props) {
   const requestQuery = useQuery({
     queryKey: ['request', effectiveId],
     queryFn: () => requestService.getOne(effectiveId!),
+    enabled: Boolean(effectiveId),
+  });
+
+  const offersQuery = useQuery({
+    queryKey: ['request-offers', effectiveId],
+    queryFn: () => requestService.offers(effectiveId!),
     enabled: Boolean(effectiveId),
   });
 
@@ -110,10 +129,11 @@ export default function ActiveJobScreen({ route, navigation }: Props) {
     setSuccessMessage(null);
     if (effectiveId) {
       void requestQuery.refetch();
+      void offersQuery.refetch();
     } else {
       void listQuery.refetch();
     }
-  }, [effectiveId, listQuery, requestQuery]);
+  }, [effectiveId, listQuery, offersQuery, requestQuery]);
 
   const loading = listQuery.isLoading || requestQuery.isLoading;
   const refreshing = listQuery.isRefetching || requestQuery.isRefetching;
@@ -154,12 +174,16 @@ export default function ActiveJobScreen({ route, navigation }: Props) {
   }
 
   const request = requestQuery.data;
+  const myOffer = pickCurrentWorkerOffer(offersQuery.data?.items ?? []);
   const next = NEXT_STATUS[request.status];
   const busy = advance.isPending || cancel.isPending;
-  const canChat = Boolean(request.worker && request.status !== 'PENDING' && request.status !== 'CANCELLED');
-  const canCancel = request.status === 'ACCEPTED';
+  const isAssignedToCurrentWorker = request.worker?.user?.id === user?.id || request.worker?.userId === user?.id;
+  const canManageAssignedJob = Boolean(isAssignedToCurrentWorker && request.status !== 'PENDING');
+  const canChat = Boolean(canManageAssignedJob && request.status !== 'CANCELLED');
+  const canCancel = canManageAssignedJob && request.status === 'ACCEPTED';
   const canCall = Boolean(request.customer?.phone);
   const isTerminal = request.status === 'COMPLETED' || request.status === 'CANCELLED';
+  const shouldShowOfferActions = request.status === 'PENDING' || (!canManageAssignedJob && !isTerminal);
 
   const confirmCancel = () => {
     Alert.alert(
@@ -231,7 +255,29 @@ export default function ActiveJobScreen({ route, navigation }: Props) {
       <JobProgressTimeline request={request} />
       <JobPaymentCard request={request} label={t('jobs.details.paymentDetails')} />
 
-      {!isTerminal ? (
+      {shouldShowOfferActions ? (
+        <Card>
+          <Stack gap={spacing.md}>
+            <H3>{t('jobs.actions.current')}</H3>
+            <WorkerOfferActionCard
+              request={request}
+              myOffer={myOffer}
+              offerCount={offersQuery.data?.count ?? request.offerCount}
+              maxOffers={offersQuery.data?.limit ?? request.maxOffers}
+              offersOpen={offersQuery.data?.offersOpen ?? request.offersOpen}
+              loadingOfferState={offersQuery.isLoading}
+              onOpenChat={(offerId) => navigation.navigate('OfferChat', { requestId: effectiveId, offerId })}
+              onOpenSubscription={() => navigation.navigate('Subscription')}
+              onRefresh={() => {
+                void requestQuery.refetch();
+                void offersQuery.refetch();
+                queryClient.invalidateQueries({ queryKey: ['incoming'] });
+                queryClient.invalidateQueries({ queryKey: ['worker-requests'] });
+              }}
+            />
+          </Stack>
+        </Card>
+      ) : !isTerminal ? (
         <Card>
           <Stack gap={spacing.md}>
             <H3>{t('jobs.actions.current')}</H3>

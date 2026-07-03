@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 // IDs are UUIDs (schema uses @default(uuid()))
 const uuidSchema = z.string().uuid('Invalid ID format');
+const emptyToUndefined = (value: unknown) => value === '' ? undefined : value;
 
 export const createRequestSchema = z.object({
   body: z.object({
@@ -62,11 +63,21 @@ export const createRequestReviewSchema = z.object({
 export const createOfferSchema = z.object({
   params: z.object({ requestId: uuidSchema }),
   body: z.object({
-    proposedPrice: z.coerce.number().positive().optional(),
-    message: z.string().min(1).max(1000).trim().optional(),
-    availableAt: z.string().datetime().optional(),
-    estimatedDuration: z.string().max(120).trim().optional(),
-  }),
+    proposedPrice: z.coerce.number({ invalid_type_error: 'Enter a valid price.' })
+      .positive('Enter a price greater than zero.')
+      .max(100000, 'Enter a lower price.'),
+    message: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().max(1000, 'Message is too long.').optional(),
+    ),
+    availableAt: z.string()
+      .datetime('Choose a valid available date and time.')
+      .refine(value => new Date(value).getTime() > Date.now(), 'The selected time must be in the future.'),
+    estimatedDuration: z.coerce.number({ invalid_type_error: 'Enter a valid duration.' })
+      .int('Enter a whole number of minutes.')
+      .positive('Enter a duration greater than zero.')
+      .max(60 * 24 * 30, 'Enter a shorter duration.'),
+  }).strict(),
 });
 
 export const offerParamSchema = z.object({
