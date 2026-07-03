@@ -14,6 +14,7 @@ import { useChatStore } from '@/store/chatStore';
 import { colors, fontSize, fontWeight, radius, spacing } from '@/theme';
 import { Avatar, Banner, Body, ErrorState, ListSkeleton } from '@/components/ui';
 import { formatAppDate, useLanguage } from '@/i18n';
+import { queryKeys } from '@/utils/queryKeys';
 import type { Message } from '@/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
@@ -29,8 +30,9 @@ export default function ChatScreen({ route }: Props) {
   const lastMarkedMessageId = useRef<string | null>(null);
 
   const { data: httpMessages, isLoading, isError, refetch } = useQuery({
-    queryKey: ['messages', requestId],
+    queryKey: queryKeys.messages(requestId, user?.id),
     queryFn: () => requestService.messages(requestId),
+    enabled: Boolean(user?.id),
     refetchInterval: 3000,
   });
 
@@ -50,8 +52,8 @@ export default function ChatScreen({ route }: Props) {
       const count = Number((result as { unreadCount?: unknown }).unreadCount);
       setUnreadCount(Number.isFinite(count) ? count : 0);
     }
-    queryClient.invalidateQueries({ queryKey: ['messages-unread-count'] });
-  }, [queryClient, requestId, setUnreadCount]);
+    queryClient.invalidateQueries({ queryKey: queryKeys.messagesUnreadCount(user?.id) });
+  }, [queryClient, requestId, setUnreadCount, user?.id]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -75,12 +77,12 @@ export default function ChatScreen({ route }: Props) {
     mutationFn: () => requestService.sendMessage(requestId, content.trim()),
     onSuccess: (message) => {
       setContent('');
-      queryClient.setQueryData<Message[]>(['messages', requestId], current => {
+      queryClient.setQueryData<Message[]>(queryKeys.messages(requestId, user?.id), current => {
         const messages = current ?? [];
         if (messages.some(item => item.id === message.id)) return messages;
         return [...messages, message];
       });
-      queryClient.invalidateQueries({ queryKey: ['messages', requestId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.messages(requestId, user?.id) });
     },
   });
 

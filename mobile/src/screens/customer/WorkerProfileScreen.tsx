@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types';
 import { workerService } from '@/services/workerService';
+import { useAuthStore } from '@/store/authStore';
 import {
   Stack, Row, Card, Avatar, Badge, H2, H3, Body, BodySm, Caption,
   ErrorState, ListSkeleton, Divider,
@@ -12,6 +13,7 @@ import {
 import { RatingStars } from '@/components/ui/Rating';
 import { formatAppDate, formatCurrency, getLocalizedCategoryName, useLanguage } from '@/i18n';
 import { colors, spacing } from '@/theme';
+import { queryKeys } from '@/utils/queryKeys';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkerProfile'>;
 
@@ -23,16 +25,18 @@ function dayLabel(dayOfWeek: number, locale: string) {
 export default function WorkerProfileScreen({ route }: Props) {
   const { t, locale, language } = useLanguage();
   const { workerId } = route.params;
+  const user = useAuthStore(s => s.user);
 
   const { data: worker, isLoading, isError, refetch } = useQuery({
-    queryKey: ['worker', workerId],
+    queryKey: queryKeys.worker(workerId, user?.id),
     queryFn: () => workerService.getOne(workerId),
+    enabled: Boolean(user?.id),
   });
 
   const { data: reviewsData } = useQuery({
-    queryKey: ['reviews', workerId],
+    queryKey: queryKeys.reviews(workerId, user?.id),
     queryFn: () => workerService.reviews(workerId),
-    enabled: !!workerId,
+    enabled: Boolean(user?.id && workerId),
   });
   const reviews = Array.isArray(reviewsData) ? reviewsData : reviewsData?.items ?? reviewsData?.data ?? [];
 

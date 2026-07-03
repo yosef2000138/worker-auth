@@ -1,16 +1,30 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types';
 import { requestService } from '@/services/requestService';
+import { useAuthStore } from '@/store/authStore';
 import { Body, BodySm, Button, Card, EmptyState, H2, Row, Screen, Stack, StatusBadge } from '@/components/ui';
 import { colors, spacing } from '@/theme';
 import { formatAppDate, getLocalizedCategoryName, useLanguage } from '@/i18n';
+import { queryKeys } from '@/utils/queryKeys';
 type Props = NativeStackScreenProps<RootStackParamList, 'CustomerHome'>;
 export default function HomeScreen({ navigation }: Props) {
   const { t, locale, language } = useLanguage();
-  const { data } = useQuery({ queryKey: ['requests'], queryFn: () => requestService.list({ limit: 5 }) });
+  const user = useAuthStore(s => s.user);
+  const requestsQuery = useQuery({
+    queryKey: [...queryKeys.customerRequests(user?.id, user?.role), 'preview'],
+    queryFn: () => requestService.list({ limit: 5 }),
+    enabled: Boolean(user?.id),
+  });
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.id) void requestsQuery.refetch();
+    }, [requestsQuery, user?.id]),
+  );
+  const { data } = requestsQuery;
   const items = Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
 
   return (
@@ -26,6 +40,7 @@ export default function HomeScreen({ navigation }: Props) {
           <Button title={t('common.map')} fullWidth={false} variant="outline" style={styles.quickAction} onPress={() => navigation.navigate('Map')} />
         </Row>
         <Button title={t('nav.notifications')} variant="ghost" onPress={() => navigation.navigate('Notifications')} />
+        <Button title={t('requests.mine.viewAll')} variant="outline" onPress={() => navigation.navigate('MyRequests')} />
       </View>
 
       {items.length === 0 ? (

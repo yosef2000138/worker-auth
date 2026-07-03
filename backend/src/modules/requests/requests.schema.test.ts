@@ -51,6 +51,14 @@ test('create request schema rejects direct worker assignment fields', () => {
   }
 });
 
+test('create request schema rejects 0,0 coordinates', () => {
+  const parsed = createRequestSchema.safeParse({
+    body: { ...validRequestBody, lat: 0, lng: 0 },
+  });
+
+  assert.equal(parsed.success, false);
+});
+
 test('request review schema accepts a 1 through 5 star rating', () => {
   for (const rating of [1, 2, 3, 4, 5]) {
     const parsed = createRequestReviewSchema.parse({

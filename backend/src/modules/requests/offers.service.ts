@@ -4,48 +4,15 @@ import { env } from '../../config/env';
 import { getIO } from '../../sockets';
 import { dispatchNotification } from '../../jobs/notificationJob';
 import { getWorkerAcceptanceAccess, WorkerAcceptanceAccess } from '../subscriptions/subscriptions.service';
-import { requestReviewSelect } from '../reviews/reviews.service';
 import { CreateOfferInput, SendOfferMessageInput } from './requests.schema';
 import {
   ACTIVE_OFFER_STATUSES,
   addOfferMetaToRequests,
   assertWorkerEligibleForRequest,
 } from './requestMatching.service';
+import { requestSelect, serializeRequestForViewer } from './requestPrivacy';
 
 type ActorRole = 'CUSTOMER' | 'WORKER' | 'ADMIN';
-
-const requestSelect = {
-  id: true,
-  title: true,
-  description: true,
-  status: true,
-  lat: true,
-  lng: true,
-  address: true,
-  scheduledAt: true,
-  priceAgreed: true,
-  paymentMethod: true,
-  createdAt: true,
-  updatedAt: true,
-  category: { select: { id: true, name: true, icon: true } },
-  images: {
-    select: { id: true, imageUrl: true, order: true },
-    orderBy: { order: 'asc' as const },
-  },
-  customer: {
-    select: { id: true, fullName: true, avatarUrl: true, phone: true },
-  },
-  worker: {
-    select: {
-      id: true,
-      ratingAvg: true,
-      totalReviews: true,
-      totalJobs: true,
-      user: { select: { id: true, fullName: true, avatarUrl: true, phone: true } },
-    },
-  },
-  review: { select: requestReviewSelect },
-} satisfies Prisma.ServiceRequestSelect;
 
 const offerSelect = {
   id: true,
@@ -235,7 +202,7 @@ async function getOfferForAccess(requestId: string, offerId: string) {
   return offer;
 }
 
-function assertOfferParticipant(
+export function assertOfferParticipant(
   offer: Awaited<ReturnType<typeof getOfferForAccess>>,
   userId: string,
 ) {
@@ -434,7 +401,10 @@ export async function confirmOffer(requestId: string, offerId: string, customerI
     const [requestWithMeta] = await addOfferMetaToRequests(tx, [updatedRequest]);
 
     return {
-      request: requestWithMeta,
+      request: serializeRequestForViewer(requestWithMeta, {
+        userId: customerId,
+        role: 'CUSTOMER',
+      }),
       offer: selectedOffer,
       workerAccess,
       selectedWorkerUserId: offer.worker.userId,

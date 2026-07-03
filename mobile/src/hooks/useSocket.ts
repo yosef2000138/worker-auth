@@ -33,7 +33,7 @@ export function useSocket() {
   useEffect(() => {
     if (!socket) return;
 
-    socket.on('chat:message', (payload: { requestId: string; message: Message }) => {
+    const handleChatMessage = (payload: { requestId: string; message: Message }) => {
       const existingMessages = useChatStore.getState().messagesByRequest[payload.requestId] ?? [];
       const isDuplicate = existingMessages.some(item => item.id === payload.message.id);
       addMessage(payload.requestId, payload.message);
@@ -42,10 +42,16 @@ export function useSocket() {
       if (!isDuplicate && senderId && senderId !== userId) {
         incrementUnreadCount();
       }
-    });
-    socket.on('notification:new', (n: NotificationItem) => addNotification(n));
+    };
+    const handleNotification = (n: NotificationItem) => addNotification(n);
+
+    socket.on('chat:message', handleChatMessage);
+    socket.on('notification:new', handleNotification);
 
     return () => {
+      socket.off('chat:message', handleChatMessage);
+      socket.off('notification:new', handleNotification);
+      socket.removeAllListeners();
       socket.disconnect();
     };
   }, [socket, addMessage, addNotification, incrementUnreadCount, userId]);

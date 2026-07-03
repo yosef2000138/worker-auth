@@ -34,7 +34,7 @@ export type EligibleWorker = Prisma.WorkerGetPayload<{ select: typeof eligibleWo
 
 export type WorkerEligibility = {
   worker: EligibleWorker;
-  access: WorkerAcceptanceAccess;
+  access?: WorkerAcceptanceAccess;
 };
 
 export type RequestOfferMeta = {
@@ -47,7 +47,7 @@ function apiError(status: number, code: string, message: string, details?: unkno
   return { status, code, message, ...(details !== undefined && { details }) };
 }
 
-function workerMatchesSchedule(worker: EligibleWorker, scheduledAt?: Date | string | null) {
+export function workerMatchesSchedule(worker: Pick<EligibleWorker, 'availability'>, scheduledAt?: Date | string | null) {
   if (!scheduledAt || worker.availability.length === 0) return true;
   const scheduled = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
   if (Number.isNaN(scheduled.getTime())) return true;
@@ -119,8 +119,7 @@ export async function findEligibleWorkersForRequest(
   const eligible: WorkerEligibility[] = [];
   for (const worker of workers) {
     if (!workerMatchesSchedule(worker, request.scheduledAt)) continue;
-    const access = await getWorkerAcceptanceAccess(worker.userId, client, worker.id);
-    if (access.canAcceptMoreRequests) eligible.push({ worker, access });
+    eligible.push({ worker });
   }
 
   return eligible;
@@ -196,6 +195,9 @@ export async function addOfferMetaToRequests<T extends { id: string; status: Req
 }
 
 export async function notifyEligibleWorkersForRequest(request: MatchRequest) {
+  const meta = await getRequestOfferMeta(db, request.id, 'PENDING', null);
+  if (!meta.offersOpen) return;
+
   const eligibleWorkers = await findEligibleWorkersForRequest(db, request);
   const categoryName = request.category?.name ?? 'service';
   await Promise.allSettled(

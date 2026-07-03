@@ -12,6 +12,7 @@ import { Avatar, Badge, Body, BodySm, Button, Card, EmptyState, ErrorState, H2, 
 import { formatAppDate, useLanguage } from '@/i18n';
 import { colors, spacing } from '@/theme';
 import type { TranslationKey } from '@/i18n';
+import { queryKeys } from '@/utils/queryKeys';
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkerDashboard'>;
 
 const ACTIVE_STATUSES = ['ACCEPTED', 'ON_THE_WAY', 'IN_PROGRESS'] as const;
@@ -103,8 +104,18 @@ function SubscriptionSummaryCard({
 export default function DashboardScreen({ navigation }: Props) {
   const { t, locale } = useLanguage();
   const user = useAuthStore(s => s.user);
-  const workerQuery = useQuery({ queryKey: ['worker-me'], queryFn: workerService.me, retry: 1 });
-  const requestsQuery = useQuery({ queryKey: ['worker-requests'], queryFn: () => requestService.list({ limit: 30 }), retry: 1 });
+  const workerQuery = useQuery({
+    queryKey: queryKeys.workerMe(user?.id),
+    queryFn: workerService.me,
+    enabled: Boolean(user?.id),
+    retry: 1,
+  });
+  const requestsQuery = useQuery({
+    queryKey: queryKeys.workerRequests(user?.id),
+    queryFn: () => requestService.list({ limit: 30 }),
+    enabled: Boolean(user?.id),
+    retry: 1,
+  });
   const subscriptionQuery = useQuery({
     queryKey: backendSubscriptionQueryKey(user?.id),
     queryFn: subscriptionApi.me,
@@ -117,8 +128,12 @@ export default function DashboardScreen({ navigation }: Props) {
   const refetchSubscription = subscriptionQuery.refetch;
   useFocusEffect(
     React.useCallback(() => {
+      if (user?.id) {
+        workerQuery.refetch();
+        requestsQuery.refetch();
+      }
       refetchSubscription();
-    }, [refetchSubscription]),
+    }, [refetchSubscription, requestsQuery, user?.id, workerQuery]),
   );
   const items = getItems(requestsQuery.data);
   const active = items.filter(item => ACTIVE_STATUSES.includes(item.status as (typeof ACTIVE_STATUSES)[number]));

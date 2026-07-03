@@ -13,13 +13,13 @@ import ChatScreen from '@/screens/customer/ChatScreen';
 import InAppMapScreen from '@/screens/shared/InAppMapScreen';
 import MessagesScreen from '@/screens/shared/MessagesScreen';
 import WorkerOnboardingScreen from '@/screens/worker/WorkerOnboardingScreen';
-import { authService } from '@/services/authService';
 import { requestService } from '@/services/requestService';
 import { workerService } from '@/services/workerService';
 import { useAuthStore } from '@/store/authStore';
 import { useChatStore } from '@/store/chatStore';
 import { RootStackParamList } from '@/types';
 import { isWorkerProfileComplete } from '@/utils/workerProfile';
+import { queryKeys } from '@/utils/queryKeys';
 import { useRevenueCatIdentity } from '@/features/subscriptions';
 import { useLanguage } from '@/i18n';
 
@@ -28,11 +28,13 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 function WorkerGate() {
   const { t } = useLanguage();
   const queryClient = useQueryClient();
-  const logoutLocal = useAuthStore(s => s.logoutLocal);
+  const { logout } = useAuth();
+  const user = useAuthStore(s => s.user);
   const [completedThisSession, setCompletedThisSession] = useState(false);
   const workerQuery = useQuery({
-    queryKey: ['worker-me'],
+    queryKey: queryKeys.workerMe(user?.id),
     queryFn: workerService.me,
+    enabled: Boolean(user?.id),
     retry: 1,
   });
 
@@ -59,7 +61,7 @@ function WorkerGate() {
           title={t('common.signOut')}
           variant="outline"
           onPress={() => {
-            void authService.logout().finally(logoutLocal);
+            void logout();
           }}
         />
       </Screen>
@@ -73,7 +75,7 @@ function WorkerGate() {
         initialWorker={workerQuery.data}
         onComplete={() => {
           setCompletedThisSession(true);
-          queryClient.invalidateQueries({ queryKey: ['worker-me'] });
+          queryClient.invalidateQueries({ queryKey: queryKeys.workerMe(user?.id) });
         }}
       />
     );
@@ -93,12 +95,14 @@ function normalizeUnreadCount(value: unknown) {
 
 function AuthenticatedApp({ role }: { role?: string }) {
   const { t } = useLanguage();
+  const user = useAuthStore(s => s.user);
   useSocket();
 
   const setUnreadCount = useChatStore(s => s.setUnreadCount);
   const unreadQuery = useQuery({
-    queryKey: ['messages-unread-count'],
+    queryKey: queryKeys.messagesUnreadCount(user?.id),
     queryFn: requestService.unreadCount,
+    enabled: Boolean(user?.id),
     refetchInterval: 30_000,
   });
 
@@ -126,6 +130,7 @@ export default function AppNavigator() {
   const { user } = useAuth();
   const hydrated = useAuthStore(s => s.hydrated);
   useRevenueCatIdentity(user?.id ?? null);
+  const navigationKey = user ? `${user.id}:${user.role}` : 'auth';
 
   if (!hydrated) {
     return (
@@ -136,8 +141,8 @@ export default function AppNavigator() {
   }
 
   return (
-    <NavigationContainer>
-      {!user ? <AuthStack /> : <AuthenticatedApp role={user.role} />}
+    <NavigationContainer key={navigationKey}>
+      {!user ? <AuthStack /> : <AuthenticatedApp key={navigationKey} role={user.role} />}
     </NavigationContainer>
   );
 }

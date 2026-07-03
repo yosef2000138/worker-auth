@@ -39,7 +39,6 @@ export const requestService = {
       .then(normalizeStatusUpdateResult),
   updateStatus: (id: string, status: RequestStatusUpdate, cancellationReason?: string) =>
     requestService.updateStatusResult(id, status, cancellationReason).then(result => result.request),
-  accept: (id: string) => requestService.updateStatusResult(id, 'ACCEPTED'),
   cancel: (id: string, reason?: string) => api.post(`/requests/${id}/cancel`, { reason }).then(unwrap<ServiceRequest>),
   offers: (requestId: string) => api.get(`/requests/${requestId}/offers`).then(unwrap<RequestOffersResponse>),
   createOffer: (requestId: string, payload: CreateOfferPayload) =>

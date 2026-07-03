@@ -17,6 +17,7 @@ import { useAuthStore } from '@/store/authStore';
 import type { RequestOfferStatus, ServiceRequest, WorkerAcceptanceAccess } from '@/types';
 import { TranslationKey, useLanguage } from '@/i18n';
 import { localizedApiErrorMessage } from '@/utils/localizedErrors';
+import { queryKeys } from '@/utils/queryKeys';
 import { colors, radius, spacing } from '@/theme';
 
 type WorkerOfferState = {
@@ -241,10 +242,10 @@ export function WorkerOfferActionCard({
       setMessage('');
       setFieldErrors({});
       setNotice({ tone: 'success', message: t('offers.offerSubmitted') });
-      queryClient.invalidateQueries({ queryKey: ['request', request.id] });
-      queryClient.invalidateQueries({ queryKey: ['request-offers', request.id] });
-      queryClient.invalidateQueries({ queryKey: ['incoming'] });
-      queryClient.invalidateQueries({ queryKey: ['worker-requests'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.request(request.id, user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.requestOffers(request.id, user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.incomingRequests(user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workerRequests(user?.id) });
       queryClient.invalidateQueries({ queryKey: backendSubscriptionQueryKey(user?.id) });
       queryClient.invalidateQueries({ queryKey: workerProQueryKey(user?.id) });
       onRefresh?.();
@@ -263,9 +264,9 @@ export function WorkerOfferActionCard({
       if (code === 'WORKER_SUBSCRIPTION_REQUIRED' || code === 'WORKER_PRO_REQUIRED') {
         setPaywallVisible(true);
       }
-      queryClient.invalidateQueries({ queryKey: ['request', request.id] });
-      queryClient.invalidateQueries({ queryKey: ['request-offers', request.id] });
-      queryClient.invalidateQueries({ queryKey: ['incoming'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.request(request.id, user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.requestOffers(request.id, user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.incomingRequests(user?.id) });
       onRefresh?.();
     },
   });
@@ -275,10 +276,10 @@ export function WorkerOfferActionCard({
     onSuccess: (offer) => {
       setLocalOffer({ id: offer.id, status: offer.status });
       setNotice({ tone: 'success', message: t('offers.withdrawnSuccess') });
-      queryClient.invalidateQueries({ queryKey: ['request', request.id] });
-      queryClient.invalidateQueries({ queryKey: ['request-offers', request.id] });
-      queryClient.invalidateQueries({ queryKey: ['incoming'] });
-      queryClient.invalidateQueries({ queryKey: ['worker-requests'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.request(request.id, user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.requestOffers(request.id, user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.incomingRequests(user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workerRequests(user?.id) });
       onRefresh?.();
     },
     onError: (error) => {

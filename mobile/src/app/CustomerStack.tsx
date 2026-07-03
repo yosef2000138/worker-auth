@@ -6,6 +6,7 @@ import CategoriesScreen from '@/screens/customer/CategoriesScreen';
 import ChatScreen from '@/screens/customer/ChatScreen';
 import CreateRequestScreen from '@/screens/customer/CreateRequestScreen';
 import HomeScreen from '@/screens/customer/HomeScreen';
+import MyRequestsScreen from '@/screens/customer/MyRequestsScreen';
 import NotificationsScreen from '@/screens/customer/NotificationsScreen';
 import ProfileScreen from '@/screens/customer/ProfileScreen';
 import RatingScreen from '@/screens/customer/RatingScreen';
@@ -30,6 +31,7 @@ function HomeStack() {
         component={HomeScreen}
         options={{ title: t('nav.home'), headerRight: messagesHeader }}
       />
+      <Stack.Screen name="MyRequests" component={MyRequestsScreen} options={{ title: t('requests.mine.title'), headerRight: messagesHeader }} />
       <Stack.Screen name="Categories" component={CategoriesScreen} options={{ title: t('nav.categories'), headerRight: messagesHeader }} />
       <Stack.Screen name="CreateRequest" component={CreateRequestScreen} options={{ title: t('nav.createRequest') }} />
       <Stack.Screen name="WorkerProfile" component={WorkerProfileScreen} options={{ title: t('nav.workerProfile') }} />

@@ -9,13 +9,19 @@ export const createRequestSchema = z.object({
     categoryId:    uuidSchema,
     title:         z.string().min(5, 'Title too short').max(200).trim(),
     description:   z.string().min(10, 'Description too short').max(2000).trim(),
-    lat:           z.coerce.number().min(-90).max(90),
-    lng:           z.coerce.number().min(-180).max(180),
+	    lat:           z.coerce.number().min(-90).max(90),
+	    lng:           z.coerce.number().min(-180).max(180),
     address:       z.string().min(5).max(500).trim(),
     scheduledAt:   z.string().datetime().optional(),
     paymentMethod: z.enum(['ONLINE', 'CASH']).default('CASH'),
-  }).strict(),
-});
+	  }).strict().refine(
+	    data => !(data.lat === 0 && data.lng === 0),
+	    {
+	      message: 'Choose a valid service location',
+	      path: ['lat'],
+	    },
+	  ),
+	});
 
 export const updateStatusSchema = z.object({
   params: z.object({ id: uuidSchema }),

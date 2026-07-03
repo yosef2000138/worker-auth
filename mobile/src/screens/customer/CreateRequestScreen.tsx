@@ -1,23 +1,27 @@
 import React, { useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { RootStackParamList } from '@/types';
 import { requestService } from '@/services/requestService';
 import { workerService } from '@/services/workerService';
+import { useAuthStore } from '@/store/authStore';
 import { Banner, BodySm, Button, Card, Field, H2, Row, Stack } from '@/components/ui';
 import { useLocation } from '@/hooks/useLocation';
 import { getLocalizedCategoryName, useLanguage } from '@/i18n';
 import { colors, spacing } from '@/theme';
 import { localizedApiErrorMessage } from '@/utils/localizedErrors';
 import { getDuplicateActiveRequestInfo } from '@/utils/duplicateRequestError';
+import { queryKeys } from '@/utils/queryKeys';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateRequest'>;
 
 export default function CreateRequestScreen({ route, navigation }: Props) {
   const { t, language } = useLanguage();
+  const queryClient = useQueryClient();
+  const user = useAuthStore(s => s.user);
   const [categoryId, setCategoryId] = useState(route.params?.categoryId ?? '');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -43,12 +47,17 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
       title: title.trim(),
       description: description.trim(),
       address: address.trim(),
-      lat: location?.coords.latitude ?? 0,
-      lng: location?.coords.longitude ?? 0,
+      lat: location!.coords.latitude,
+      lng: location!.coords.longitude,
       paymentMethod: 'CASH',
       images: image ? [{ uri: image.uri, name: image.fileName ?? undefined, type: image.mimeType ?? undefined }] : undefined,
     }),
-    onSuccess: request => navigation.replace('RequestDetails', { requestId: request.id }),
+    onSuccess: request => {
+      if (user?.id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.customerRequests(user.id, user.role) });
+      }
+      navigation.replace('RequestDetails', { requestId: request.id });
+    },
     onError: (error) => {
       const duplicate = getDuplicateActiveRequestInfo(error);
       if (!duplicate) return;
@@ -72,6 +81,7 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
     if (title.trim().length < 5) return t('requests.create.titleRequired');
     if (description.trim().length < 10) return t('requests.create.descriptionRequired');
     if (address.trim().length < 5) return t('requests.create.addressRequired');
+    if (!location) return t('requests.create.locationRequired');
     return null;
   };
 

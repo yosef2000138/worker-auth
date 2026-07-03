@@ -202,6 +202,7 @@ export type RootStackParamList = {
   } | undefined;
   CustomerHomeTab: undefined;
   CustomerHome: undefined;
+  MyRequests: undefined;
   Categories: undefined;
   CreateRequest: { categoryId?: string } | undefined;
   WorkerProfile: { workerId: string };

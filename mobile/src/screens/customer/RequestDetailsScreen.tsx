@@ -23,6 +23,8 @@ import { Avatar, Badge, Banner, Body, BodySm, Button, Card, EmptyState, H3, Row,
 import { formatAppDate, formatCurrency, getPaymentStatusLabel, TranslationKey, useLanguage } from '@/i18n';
 import { colors, spacing } from '@/theme';
 import { localizedApiErrorMessage } from '@/utils/localizedErrors';
+import { useAuthStore } from '@/store/authStore';
+import { queryKeys } from '@/utils/queryKeys';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RequestDetails'>;
 
@@ -51,31 +53,33 @@ export default function RequestDetailsScreen({ route, navigation }: Props) {
   const { requestId } = route.params;
   const { t, locale } = useLanguage();
   const queryClient = useQueryClient();
+  const user = useAuthStore(s => s.user);
   const [successMessage, setSuccessMessage] = React.useState<string | null>(null);
 
   const requestQuery = useQuery({
-    queryKey: ['request', requestId],
+    queryKey: queryKeys.request(requestId, user?.id),
     queryFn: () => requestService.getOne(requestId),
+    enabled: Boolean(user?.id),
   });
 
   const request = requestQuery.data;
   const offersQuery = useQuery({
-    queryKey: ['request-offers', requestId],
+    queryKey: queryKeys.requestOffers(requestId, user?.id),
     queryFn: () => requestService.offers(requestId),
-    enabled: Boolean(request && request.status === 'PENDING' && !request.worker),
+    enabled: Boolean(user?.id && request && request.status === 'PENDING' && !request.worker),
     retry: 1,
   });
 
   const paymentQuery = useQuery({
-    queryKey: ['payment', requestId],
+    queryKey: queryKeys.payment(requestId, user?.id),
     queryFn: () => paymentService.byRequest(requestId),
-    enabled: request?.status === 'COMPLETED',
+    enabled: Boolean(user?.id && request?.status === 'COMPLETED'),
   });
 
   const ratingEligibilityQuery = useQuery({
-    queryKey: ['rating-eligibility', requestId],
+    queryKey: queryKeys.ratingEligibility(requestId, user?.id),
     queryFn: () => requestService.ratingEligibility(requestId),
-    enabled: request?.status === 'COMPLETED',
+    enabled: Boolean(user?.id && request?.status === 'COMPLETED'),
     retry: 1,
   });
 
@@ -95,9 +99,9 @@ export default function RequestDetailsScreen({ route, navigation }: Props) {
     mutationFn: () => requestService.cancel(requestId, 'Cancelled by customer'),
     onSuccess: (updated) => {
       setSuccessMessage(t('requests.details.cancelled'));
-      queryClient.setQueryData(['request', requestId], updated);
-      queryClient.invalidateQueries({ queryKey: ['request', requestId] });
-      queryClient.invalidateQueries({ queryKey: ['requests'] });
+      queryClient.setQueryData(queryKeys.request(requestId, user?.id), updated);
+      queryClient.invalidateQueries({ queryKey: queryKeys.request(requestId, user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.customerRequests(user?.id, user?.role) });
     },
   });
 
@@ -105,10 +109,10 @@ export default function RequestDetailsScreen({ route, navigation }: Props) {
     mutationFn: (offerId: string) => requestService.confirmOffer(requestId, offerId),
     onSuccess: (result) => {
       setSuccessMessage(t('offers.selectedSuccess'));
-      queryClient.setQueryData(['request', requestId], result.request);
-      queryClient.invalidateQueries({ queryKey: ['request', requestId] });
-      queryClient.invalidateQueries({ queryKey: ['request-offers', requestId] });
-      queryClient.invalidateQueries({ queryKey: ['requests'] });
+      queryClient.setQueryData(queryKeys.request(requestId, user?.id), result.request);
+      queryClient.invalidateQueries({ queryKey: queryKeys.request(requestId, user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.requestOffers(requestId, user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.customerRequests(user?.id, user?.role) });
     },
   });
 

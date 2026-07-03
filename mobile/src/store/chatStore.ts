@@ -8,6 +8,7 @@ type State = {
   addMessage: (requestId: string, message: Message) => void;
   setUnreadCount: (count: number) => void;
   incrementUnreadCount: () => void;
+  reset: () => void;
 };
 
 export const useChatStore = create<State>((set) => ({
@@ -21,4 +22,5 @@ export const useChatStore = create<State>((set) => ({
   }),
   setUnreadCount: (unreadCount) => set({ unreadCount: Math.max(0, unreadCount) }),
   incrementUnreadCount: () => set(s => ({ unreadCount: s.unreadCount + 1 })),
+  reset: () => set({ messagesByRequest: {}, unreadCount: 0 }),
 }));

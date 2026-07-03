@@ -7,10 +7,12 @@ import { useQuery } from '@tanstack/react-query';
 
 import { requestService } from '@/services/requestService';
 import { ApiRequestError } from '@/services/api';
+import { useAuthStore } from '@/store/authStore';
 import { Paginated, RequestStatus, RootStackParamList, ServiceRequest } from '@/types';
 import { Badge, Body, BodySm, Button, Card, EmptyState, ErrorState, H2, H3, ListSkeleton, Row, Screen, Stack, StatusBadge } from '@/components/ui';
 import { colors, fontSize, radius, spacing } from '@/theme';
 import { formatAppDate, formatAppTime, getLocalizedCategoryName, useLanguage } from '@/i18n';
+import { queryKeys } from '@/utils/queryKeys';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -153,13 +155,15 @@ function ScheduledJobCard({
 export default function AvailabilityScreen() {
   const { isRTL, t, locale, language } = useLanguage();
   const navigation = useNavigation<Nav>();
+  const user = useAuthStore(s => s.user);
   const today = useMemo(() => startOfDay(new Date()), []);
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(today);
 
   const requestsQuery = useQuery({
-    queryKey: ['worker-work-calendar', calendarMonthKey(visibleMonth)],
+    queryKey: queryKeys.workerCalendar(user?.id, calendarMonthKey(visibleMonth)),
     queryFn: fetchWorkerSchedule,
+    enabled: Boolean(user?.id),
     retry: 1,
   });
 

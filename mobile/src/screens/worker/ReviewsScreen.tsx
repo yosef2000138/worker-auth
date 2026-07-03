@@ -7,6 +7,8 @@ import { RatingStars } from '@/components/ui/Rating';
 import { Review, WorkerReviewsResponse } from '@/types';
 import { colors, spacing } from '@/theme';
 import { formatAppDate, getLocalizedCategoryName, useLanguage } from '@/i18n';
+import { useAuthStore } from '@/store/authStore';
+import { queryKeys } from '@/utils/queryKeys';
 
 function getItems(data?: WorkerReviewsResponse | Review[]) {
   return Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
@@ -46,9 +48,14 @@ function RatingDistribution({
 
 export default function ReviewsScreen() {
   const { t, locale, language } = useLanguage();
-  const workerQuery = useQuery({ queryKey: ['worker-me'], queryFn: workerService.me });
+  const user = useAuthStore(s => s.user);
+  const workerQuery = useQuery({
+    queryKey: queryKeys.workerMe(user?.id),
+    queryFn: workerService.me,
+    enabled: Boolean(user?.id),
+  });
   const reviewsQuery = useInfiniteQuery({
-    queryKey: ['worker-reviews', workerQuery.data?.id],
+    queryKey: queryKeys.workerReviews(workerQuery.data?.id),
     queryFn: ({ pageParam }) => workerService.reviews(workerQuery.data!.id, pageParam, 10),
     initialPageParam: 1,
     enabled: !!workerQuery.data?.id,

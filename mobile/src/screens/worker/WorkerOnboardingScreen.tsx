@@ -16,12 +16,13 @@ import {
   authPalette,
 } from '@/components/auth';
 import { formatAppDate, getLocalizedCategoryName, useLanguage } from '@/i18n';
-import { authService } from '@/services/authService';
 import { userService } from '@/services/userService';
 import { workerService } from '@/services/workerService';
 import { useAuthStore } from '@/store/authStore';
+import { useAuth } from '@/hooks/useAuth';
 import { Category, WorkerProfile } from '@/types';
 import { isWorkerProfileComplete, workerCategoryIds, workerProfileMissingItemKeys } from '@/utils/workerProfile';
+import { queryKeys } from '@/utils/queryKeys';
 
 type Props = {
   initialWorker?: WorkerProfile;
@@ -98,7 +99,7 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
   const queryClient = useQueryClient();
   const user = useAuthStore(s => s.user);
   const setUser = useAuthStore(s => s.setUser);
-  const logoutLocal = useAuthStore(s => s.logoutLocal);
+  const { logout } = useAuth();
   const draftKey = `worker_onboarding_draft_${user?.id ?? initialWorker?.user?.id ?? 'current'}`;
 
   const [step, setStep] = useState(1);
@@ -279,7 +280,7 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
   };
 
   const handleLogout = () => {
-    void authService.logout().finally(logoutLocal);
+    void logout();
   };
 
   const handleFinish = async () => {
@@ -319,7 +320,7 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
 
       setUser(updatedUser);
       const latestWorker = await workerService.me();
-      queryClient.setQueryData(['worker-me'], latestWorker);
+      queryClient.setQueryData(queryKeys.workerMe(user?.id), latestWorker);
 
       if (!isWorkerProfileComplete(latestWorker)) {
         setError(t('worker.onboarding.missingItems', { items: workerProfileMissingItemKeys(latestWorker).map(key => t(key)).join(', ') }));

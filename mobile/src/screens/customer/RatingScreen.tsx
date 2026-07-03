@@ -9,6 +9,8 @@ import { Avatar, Banner, Body, BodySm, Button, Card, EmptyState, Field, H2, H3, 
 import { colors, radius, spacing } from '@/theme';
 import { formatAppDate, getLocalizedCategoryName, useLanguage } from '@/i18n';
 import { localizedApiErrorMessage } from '@/utils/localizedErrors';
+import { useAuthStore } from '@/store/authStore';
+import { queryKeys } from '@/utils/queryKeys';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Rating'>;
 
@@ -24,13 +26,15 @@ export default function RatingScreen({ route, navigation }: Props) {
   const { requestId } = route.params;
   const { t, locale, language } = useLanguage();
   const queryClient = useQueryClient();
+  const user = useAuthStore(s => s.user);
   const [rating, setRating] = React.useState<number | null>(null);
   const [comment, setComment] = React.useState('');
   const [duplicateNotice, setDuplicateNotice] = React.useState(false);
 
   const eligibilityQuery = useQuery({
-    queryKey: ['rating-eligibility', requestId],
+    queryKey: queryKeys.ratingEligibility(requestId, user?.id),
     queryFn: () => reviewService.eligibility(requestId),
+    enabled: Boolean(user?.id),
     retry: 1,
   });
 
@@ -45,27 +49,27 @@ export default function RatingScreen({ route, navigation }: Props) {
     onSuccess: (result) => {
       const review = result.review;
       queryClient.setQueryData<RatingEligibility | undefined>(
-        ['rating-eligibility', requestId],
+        queryKeys.ratingEligibility(requestId, user?.id),
         current => current ? { ...current, alreadyRated: true, canRate: false, review } : current,
       );
       queryClient.setQueryData<ServiceRequest | undefined>(
-        ['request', requestId],
+        queryKeys.request(requestId, user?.id),
         current => current ? { ...current, canReview: false, review } : current,
       );
-      queryClient.invalidateQueries({ queryKey: ['request', requestId] });
-      queryClient.invalidateQueries({ queryKey: ['rating-eligibility', requestId] });
-      queryClient.invalidateQueries({ queryKey: ['requests'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.request(requestId, user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.ratingEligibility(requestId, user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.customerRequests(user?.id, user?.role) });
       if (worker?.id) {
-        queryClient.invalidateQueries({ queryKey: ['worker-reviews', worker.id] });
-        queryClient.invalidateQueries({ queryKey: ['reviews', worker.id] });
-        queryClient.invalidateQueries({ queryKey: ['worker', worker.id] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.workerReviews(worker.id) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.reviews(worker.id, user?.id) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.worker(worker.id, user?.id) });
       }
     },
     onError: (error) => {
       const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
       if (code === 'REVIEW_ALREADY_EXISTS') {
         setDuplicateNotice(true);
-        queryClient.invalidateQueries({ queryKey: ['request', requestId] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.request(requestId, user?.id) });
         void eligibilityQuery.refetch();
       }
     },

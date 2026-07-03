@@ -16,6 +16,7 @@ import { Avatar, Banner, Body, ErrorState, ListSkeleton } from '@/components/ui'
 import { requestService } from '@/services/requestService';
 import { useAuthStore } from '@/store/authStore';
 import { formatAppDate, useLanguage } from '@/i18n';
+import { queryKeys } from '@/utils/queryKeys';
 import { colors, fontSize, fontWeight, radius, spacing } from '@/theme';
 import type { OfferMessage, RootStackParamList } from '@/types';
 
@@ -30,8 +31,9 @@ export default function OfferChatScreen({ route }: Props) {
   const flatRef = useRef<FlatList>(null);
 
   const { data: httpMessages, isLoading, isError, refetch } = useQuery({
-    queryKey: ['offer-messages', requestId, offerId],
+    queryKey: queryKeys.offerMessages(requestId, offerId, user?.id),
     queryFn: () => requestService.offerMessages(requestId, offerId),
+    enabled: Boolean(user?.id),
     refetchInterval: 3000,
   });
 
@@ -52,12 +54,12 @@ export default function OfferChatScreen({ route }: Props) {
     mutationFn: () => requestService.sendOfferMessage(requestId, offerId, content.trim()),
     onSuccess: (message) => {
       setContent('');
-      queryClient.setQueryData<OfferMessage[]>(['offer-messages', requestId, offerId], current => {
+      queryClient.setQueryData<OfferMessage[]>(queryKeys.offerMessages(requestId, offerId, user?.id), current => {
         const messages = current ?? [];
         if (messages.some(item => item.id === message.id)) return messages;
         return [...messages, message];
       });
-      queryClient.invalidateQueries({ queryKey: ['offer-messages', requestId, offerId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.offerMessages(requestId, offerId, user?.id) });
       queryClient.invalidateQueries({ queryKey: ['request-offers', requestId] });
     },
   });

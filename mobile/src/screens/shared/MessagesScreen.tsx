@@ -8,6 +8,7 @@ import { requestService } from '@/services/requestService';
 import { useAuthStore } from '@/store/authStore';
 import { Paginated, RootStackParamList, ServiceRequest } from '@/types';
 import { colors, spacing } from '@/theme';
+import { queryKeys } from '@/utils/queryKeys';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Messages'>;
 
@@ -23,8 +24,9 @@ export default function MessagesScreen({ navigation }: Props) {
   const { t, locale } = useLanguage();
   const user = useAuthStore(s => s.user);
   const query = useQuery({
-    queryKey: ['message-conversations'],
+    queryKey: queryKeys.messageConversations(user?.id, user?.role),
     queryFn: () => requestService.list({ limit: 50 }),
+    enabled: Boolean(user?.id),
   });
 
   const conversations = getItems(query.data).filter(canChat);

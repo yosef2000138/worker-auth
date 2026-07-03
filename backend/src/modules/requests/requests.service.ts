@@ -3,16 +3,22 @@ import { db } from '../../config/database';
 import { uploadBuffer } from '../../config/cloudinary';
 import { pushToUser } from '../../utils/fcm';
 import { WorkerAcceptanceAccess } from '../subscriptions/subscriptions.service';
-import { requestReviewSelect } from '../reviews/reviews.service';
 import { closeOffersForCancelledRequest } from './offers.service';
 import {
   ACTIVE_OFFER_STATUSES,
   addOfferMetaToRequests,
   buildIncomingRequestWhereForWorker,
   notifyEligibleWorkersForRequest,
+  workerMatchesSchedule,
 } from './requestMatching.service';
+import {
+  requestSelect,
+  serializeRequestForViewer,
+  serializeRequestsForViewer,
+} from './requestPrivacy';
 
 export const ACTIVE_DUPLICATE_REQUEST_STATUSES: RequestStatus[] = ['PENDING', 'ACCEPTED', 'ON_THE_WAY', 'IN_PROGRESS'];
+const DUPLICATE_DISTANCE_KM = 0.2;
 
 // ─── FSM ─────────────────────────────────────────────────────────────────────
 type Actor = 'CUSTOMER' | 'WORKER';
@@ -38,39 +44,6 @@ function assertTransition(current: RequestStatus, next: RequestStatus, by: Actor
     };
   }
 }
-
-// ─── Shared select ────────────────────────────────────────────────────────────
-const requestSelect = {
-  id: true,
-  title: true,
-  description: true,
-  status: true,
-  lat: true,
-  lng: true,
-  address: true,
-  scheduledAt: true,
-  priceAgreed: true,
-  paymentMethod: true,
-  createdAt: true,
-  updatedAt: true,
-  category: { select: { id: true, name: true, icon: true } },
-  images: {
-    select: { id: true, imageUrl: true, order: true },
-    orderBy: { order: 'asc' as const },
-  },
-  customer: {
-    select: { id: true, fullName: true, avatarUrl: true, phone: true },
-  },
-  worker: {
-    select: {
-      id: true,
-      ratingAvg: true,
-      totalReviews: true,
-      user: { select: { id: true, fullName: true, avatarUrl: true, phone: true } },
-    },
-  },
-  review: { select: requestReviewSelect },
-} satisfies Prisma.ServiceRequestSelect;
 
 export type RequestStatusUpdateResult =
   | Prisma.ServiceRequestGetPayload<{ select: typeof requestSelect }>
@@ -116,6 +89,37 @@ export function duplicateActiveRequestError(duplicate: { id: string; status: Req
     message: 'You already have an active request for this service at this location.',
     details: duplicate,
   };
+}
+
+export function normalizeRequestAddress(address: string) {
+  return address.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function toRadians(value: number) {
+  return value * Math.PI / 180;
+}
+
+export function distanceKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const earthRadiusKm = 6371;
+  const dLat = toRadians(b.lat - a.lat);
+  const dLng = toRadians(b.lng - a.lng);
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * earthRadiusKm * Math.asin(Math.sqrt(h));
+}
+
+function isSameDuplicateLocation(
+  existing: { address: string; lat: number; lng: number },
+  next: { address: string; lat: number; lng: number },
+) {
+  const normalizedExistingAddress = normalizeRequestAddress(existing.address);
+  const normalizedNextAddress = normalizeRequestAddress(next.address);
+  if (normalizedExistingAddress && normalizedExistingAddress === normalizedNextAddress) return true;
+  if ((existing.lat === 0 && existing.lng === 0) || (next.lat === 0 && next.lng === 0)) return false;
+  return distanceKm(existing, next) <= DUPLICATE_DISTANCE_KM;
 }
 
 async function addWorkerOfferState<T extends { id: string }>(items: T[], workerId: string) {
@@ -164,18 +168,15 @@ export async function createRequest(
   });
   if (!category) throw { status: 404, message: 'Service category not found' };
 
-  const duplicate = await db.serviceRequest.findFirst({
+  const activeRequests = await db.serviceRequest.findMany({
     where: {
       customerId,
       categoryId: body.categoryId,
       status: { in: ACTIVE_DUPLICATE_REQUEST_STATUSES },
-      OR: [
-        { address: body.address },
-        { lat: body.lat, lng: body.lng },
-      ],
     },
-    select: { id: true, status: true },
+    select: { id: true, status: true, address: true, lat: true, lng: true },
   });
+  const duplicate = activeRequests.find(item => isSameDuplicateLocation(item, body));
   if (duplicate) {
     throw duplicateActiveRequestError(duplicate);
   }
@@ -227,11 +228,18 @@ export async function listRequests(
 
   let where: Prisma.ServiceRequestWhereInput;
   let workerIdForOfferState: string | null = null;
+  let workerForViewer: { id: string; availability: { dayOfWeek: number; startTime: string; endTime: string }[] } | null = null;
 
   if (role === 'CUSTOMER') {
     where = { customerId: userId, ...(status && { status }) };
   } else {
-    const worker = await db.worker.findUnique({ where: { userId }, select: { id: true } });
+    const worker = await db.worker.findUnique({
+      where: { userId },
+      select: {
+        id: true,
+        availability: { select: { dayOfWeek: true, startTime: true, endTime: true } },
+      },
+    });
 
     if (!worker) {
       return {
@@ -240,6 +248,7 @@ export async function listRequests(
       };
     }
 
+    workerForViewer = worker;
     workerIdForOfferState = worker.id;
     const openForOffer = await buildIncomingRequestWhereForWorker(db, userId);
     const impossibleWhere: Prisma.ServiceRequestWhereInput = { id: '__no_matching_requests__' };
@@ -255,6 +264,27 @@ export async function listRequests(
             { offers: { some: { workerId: worker.id } } },
           ],
         };
+    if (status === 'PENDING') {
+      const candidates = await db.serviceRequest.findMany({
+        where,
+        select: requestSelect,
+        orderBy: { createdAt: 'desc' },
+      });
+      const scheduledCandidates = candidates.filter(item => workerMatchesSchedule(worker, item.scheduledAt));
+      const itemsWithOfferMeta = await addOfferMetaToRequests(db, scheduledCandidates);
+      const itemsWithViewerOfferState = await addWorkerOfferState(itemsWithOfferMeta, workerIdForOfferState);
+      const filteredItems = itemsWithViewerOfferState.filter(item => {
+        if (item.worker) return true;
+        if ('hasMyOffer' in item && item.hasMyOffer) return true;
+        return item.offerCount < item.maxOffers;
+      });
+      const pageItems = filteredItems.slice(skip, skip + limit);
+
+      return {
+        items: serializeRequestsForViewer(pageItems, { userId, role, workerId: workerIdForOfferState }),
+        pagination: { total: filteredItems.length, page, limit, pages: Math.ceil(filteredItems.length / limit) },
+      };
+    }
   }
 
   const [total, items] = await Promise.all([
@@ -288,7 +318,7 @@ export async function listRequests(
   const totalForResponse = role === 'WORKER' && status === 'PENDING' ? finalItems.length : total;
 
   return {
-    items: finalItems,
+    items: serializeRequestsForViewer(finalItems, { userId, role, workerId: workerForViewer?.id ?? workerIdForOfferState }),
     pagination: { total: totalForResponse, page, limit, pages: Math.ceil(totalForResponse / limit) },
   };
 }
@@ -304,12 +334,17 @@ export async function getRequest(id: string, userId: string, role: string) {
   if (role === 'CUSTOMER' && request.customer.id !== userId) {
     throw { status: 403, message: 'Not your request' };
   }
+  let viewerWorkerId: string | null = null;
   if (role === 'WORKER') {
     const worker = await db.worker.findUnique({
       where: { userId },
-      select: { id: true },
+      select: {
+        id: true,
+        availability: { select: { dayOfWeek: true, startTime: true, endTime: true } },
+      },
     });
     if (!worker) throw { status: 404, message: 'Worker profile not found' };
+    viewerWorkerId = worker.id;
 
     const isAssignedWorker = request.worker?.user.id === userId;
     const hasOffer = await db.requestOffer.findFirst({
@@ -324,7 +359,7 @@ export async function getRequest(id: string, userId: string, role: string) {
           where: { AND: [{ id }, incomingWhere] },
           select: { id: true },
         });
-        isOpenIncomingRequest = Boolean(eligibleRequest);
+        isOpenIncomingRequest = Boolean(eligibleRequest) && workerMatchesSchedule(worker, request.scheduledAt);
       }
     }
 
@@ -343,7 +378,7 @@ export async function getRequest(id: string, userId: string, role: string) {
       && request.worker?.user.id !== userId,
   };
   const [requestWithOfferMeta] = await addOfferMetaToRequests(db, [requestWithReviewState]);
-  return requestWithOfferMeta;
+  return serializeRequestForViewer(requestWithOfferMeta, { userId, role, workerId: viewerWorkerId });
 }
 
 // ─── Update status ────────────────────────────────────────────────────────────

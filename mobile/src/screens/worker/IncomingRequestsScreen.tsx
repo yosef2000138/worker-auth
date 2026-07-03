@@ -1,7 +1,7 @@
 import React from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { WorkerOfferActionCard } from '@/components/offers/WorkerOfferActionCard';
 import { MapPreview } from '@/components/map';
@@ -10,6 +10,8 @@ import { requestService } from '@/services/requestService';
 import { Paginated, RequestOfferStatus, RootStackParamList, ServiceRequest } from '@/types';
 import { colors, spacing } from '@/theme';
 import { formatAppDate, getLocalizedCategoryName, useLanguage } from '@/i18n';
+import { useAuthStore } from '@/store/authStore';
+import { queryKeys } from '@/utils/queryKeys';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -28,10 +30,18 @@ function myOfferFromRequest(item: ServiceRequest) {
 export default function IncomingRequestsScreen() {
   const { t, locale, language } = useLanguage();
   const navigation = useNavigation<Nav>();
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['incoming'],
+  const user = useAuthStore(s => s.user);
+  const { data, isLoading, isError, isRefetching, refetch } = useQuery({
+    queryKey: queryKeys.incomingRequests(user?.id),
     queryFn: () => requestService.list({ status: 'PENDING', limit: 30 }),
+    enabled: Boolean(user?.id),
   });
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (user?.id) void refetch();
+    }, [refetch, user?.id]),
+  );
 
   const items = getItems(data).filter(item => item.status === 'PENDING');
 
@@ -56,6 +66,7 @@ export default function IncomingRequestsScreen() {
           data={items}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />}
           ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
           renderItem={({ item }) => (
             <Card>

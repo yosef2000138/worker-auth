@@ -24,6 +24,7 @@ import { useLanguage } from '@/i18n';
 import { colors, spacing } from '@/theme';
 import type { TranslationKey } from '@/i18n';
 import { useAuthStore } from '@/store/authStore';
+import { queryKeys } from '@/utils/queryKeys';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveJob'>;
 
@@ -71,9 +72,9 @@ export default function ActiveJobScreen({ route, navigation }: Props) {
   const [successMessage, setSuccessMessage] = React.useState<string | null>(null);
 
   const listQuery = useQuery({
-    queryKey: ['worker-active-fallback'],
+    queryKey: queryKeys.workerActiveFallback(user?.id),
     queryFn: () => requestService.list({ limit: 50 }),
-    enabled: !requestId,
+    enabled: Boolean(user?.id && !requestId),
   });
 
   const fallbackItems = getItems(listQuery.data);
@@ -81,15 +82,15 @@ export default function ActiveJobScreen({ route, navigation }: Props) {
   const effectiveId = requestId ?? fallbackRequest?.id;
 
   const requestQuery = useQuery({
-    queryKey: ['request', effectiveId],
+    queryKey: queryKeys.request(effectiveId, user?.id),
     queryFn: () => requestService.getOne(effectiveId!),
-    enabled: Boolean(effectiveId),
+    enabled: Boolean(user?.id && effectiveId),
   });
 
   const offersQuery = useQuery({
-    queryKey: ['request-offers', effectiveId],
+    queryKey: queryKeys.requestOffers(effectiveId, user?.id),
     queryFn: () => requestService.offers(effectiveId!),
-    enabled: Boolean(effectiveId),
+    enabled: Boolean(user?.id && effectiveId),
   });
 
   const refetchRequest = requestQuery.refetch;
@@ -108,10 +109,10 @@ export default function ActiveJobScreen({ route, navigation }: Props) {
     mutationFn: (status: RequestStatusUpdate) => requestService.updateStatus(effectiveId!, status),
     onSuccess: (updated, status) => {
       setSuccessMessage(successCopy(status, t));
-      queryClient.setQueryData(['request', effectiveId], updated);
-      queryClient.invalidateQueries({ queryKey: ['request', effectiveId] });
-      queryClient.invalidateQueries({ queryKey: ['worker-requests'] });
-      queryClient.invalidateQueries({ queryKey: ['incoming'] });
+      queryClient.setQueryData(queryKeys.request(effectiveId, user?.id), updated);
+      queryClient.invalidateQueries({ queryKey: queryKeys.request(effectiveId, user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workerRequests(user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.incomingRequests(user?.id) });
     },
   });
 
@@ -119,9 +120,9 @@ export default function ActiveJobScreen({ route, navigation }: Props) {
     mutationFn: () => requestService.cancel(effectiveId!, 'Cancelled by worker'),
     onSuccess: (updated) => {
       setSuccessMessage(t('jobs.success.cancelled'));
-      queryClient.setQueryData(['request', effectiveId], updated);
-      queryClient.invalidateQueries({ queryKey: ['request', effectiveId] });
-      queryClient.invalidateQueries({ queryKey: ['worker-requests'] });
+      queryClient.setQueryData(queryKeys.request(effectiveId, user?.id), updated);
+      queryClient.invalidateQueries({ queryKey: queryKeys.request(effectiveId, user?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workerRequests(user?.id) });
     },
   });
 
@@ -271,8 +272,8 @@ export default function ActiveJobScreen({ route, navigation }: Props) {
               onRefresh={() => {
                 void requestQuery.refetch();
                 void offersQuery.refetch();
-                queryClient.invalidateQueries({ queryKey: ['incoming'] });
-                queryClient.invalidateQueries({ queryKey: ['worker-requests'] });
+                queryClient.invalidateQueries({ queryKey: queryKeys.incomingRequests(user?.id) });
+                queryClient.invalidateQueries({ queryKey: queryKeys.workerRequests(user?.id) });
               }}
             />
           </Stack>

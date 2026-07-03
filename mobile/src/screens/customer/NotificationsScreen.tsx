@@ -3,22 +3,26 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { requestService } from '@/services/requestService';
+import { useAuthStore } from '@/store/authStore';
 import { Screen, Stack, Row, Button, H3, BodySm, Caption, EmptyState, ErrorState, ListSkeleton } from '@/components/ui';
 import { formatAppDate, useLanguage } from '@/i18n';
 import { colors, fontWeight, radius, spacing } from '@/theme';
+import { queryKeys } from '@/utils/queryKeys';
 
 export default function NotificationsScreen() {
   const { t, isRTL, locale } = useLanguage();
   const queryClient = useQueryClient();
+  const user = useAuthStore(s => s.user);
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['notifications'],
+    queryKey: queryKeys.notifications(user?.id),
     queryFn: () => requestService.notifications(),
+    enabled: Boolean(user?.id),
   });
 
   const markAll = useMutation({
     mutationFn: requestService.markAllNotificationsRead,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.notifications(user?.id) }),
   });
 
   const items = Array.isArray(data) ? data : (data as any)?.items ?? (data as any)?.data ?? [];

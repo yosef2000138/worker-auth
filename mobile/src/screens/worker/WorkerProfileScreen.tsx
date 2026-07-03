@@ -6,10 +6,10 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LanguageSelector } from '@/components/language/LanguageSelector';
 import { workerService } from '@/services/workerService';
 import { userService } from '@/services/userService';
-import { authService } from '@/services/authService';
 import { useAuthStore } from '@/store/authStore';
+import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/i18n';
-import { subscriptionApi } from '@/features/subscriptions';
+import { backendSubscriptionQueryKey, subscriptionApi } from '@/features/subscriptions';
 import {
   Stack, Row, Card, Avatar, Button, Field, H2, H3,
   Body, BodySm, Banner, ErrorState, ListSkeleton,
@@ -18,6 +18,7 @@ import { RatingStars } from '@/components/ui/Rating';
 import { colors, spacing } from '@/theme';
 import { isWorkerProfileComplete, workerProfileMissingItemKeys } from '@/utils/workerProfile';
 import { RootStackParamList } from '@/types';
+import { queryKeys } from '@/utils/queryKeys';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -26,17 +27,19 @@ export default function WorkerOwnProfileScreen() {
   const navigation = useNavigation<Nav>();
   const user = useAuthStore(s => s.user);
   const setUser = useAuthStore(s => s.setUser);
-  const logoutLocal = useAuthStore(s => s.logoutLocal);
+  const { logout } = useAuth();
   const queryClient = useQueryClient();
 
   const { data: worker, isLoading, isError, refetch } = useQuery({
-    queryKey: ['worker-me'],
+    queryKey: queryKeys.workerMe(user?.id),
     queryFn: workerService.me,
+    enabled: Boolean(user?.id),
     retry: false,
   });
   const subscriptionQuery = useQuery({
-    queryKey: ['backend-subscription'],
+    queryKey: backendSubscriptionQueryKey(user?.id),
     queryFn: subscriptionApi.me,
+    enabled: Boolean(user?.id),
     retry: 1,
   });
 
@@ -74,7 +77,7 @@ export default function WorkerOwnProfileScreen() {
     },
     onSuccess: () => {
       setWorkerEditMode(false);
-      queryClient.invalidateQueries({ queryKey: ['worker-me'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workerMe(user?.id) });
     },
   });
 
@@ -94,7 +97,7 @@ export default function WorkerOwnProfileScreen() {
     onSuccess: (updated) => {
       setUser(updated);
       setPersonalEditMode(false);
-      queryClient.invalidateQueries({ queryKey: ['worker-me'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workerMe(user?.id) });
     },
   });
 
@@ -105,7 +108,7 @@ export default function WorkerOwnProfileScreen() {
         text: t('profile.logout'),
         style: 'destructive',
         onPress: () => {
-          void authService.logout().finally(logoutLocal);
+          void logout();
         },
       },
     ]);
