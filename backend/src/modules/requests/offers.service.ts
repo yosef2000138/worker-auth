@@ -92,7 +92,7 @@ function canMessage(status: RequestOfferStatus) {
 }
 
 async function lockRequestOfferSlot(tx: Prisma.TransactionClient, requestId: string) {
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${requestId}))`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${requestId}))`;
 }
 
 function emitToUser(userId: string, event: string, payload: unknown) {
