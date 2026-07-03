@@ -12,6 +12,7 @@ import {
 } from '@/components/ui';
 import { colors, spacing } from '@/theme';
 import { localizedApiErrorMessage } from '@/utils/localizedErrors';
+import { queryKeys } from '@/utils/queryKeys';
 
 export default function ProfileScreen() {
   const { t } = useLanguage();
@@ -28,7 +29,7 @@ export default function ProfileScreen() {
     onSuccess: (updated) => {
       setUser(updated);
       setEditMode(false);
-      queryClient.invalidateQueries({ queryKey: ['profile'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.profile(user?.id) });
     },
   });
 

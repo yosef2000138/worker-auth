@@ -60,7 +60,7 @@ export default function OfferChatScreen({ route }: Props) {
         return [...messages, message];
       });
       queryClient.invalidateQueries({ queryKey: queryKeys.offerMessages(requestId, offerId, user?.id) });
-      queryClient.invalidateQueries({ queryKey: ['request-offers', requestId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.requestOffers(requestId, user?.id) });
     },
   });
 

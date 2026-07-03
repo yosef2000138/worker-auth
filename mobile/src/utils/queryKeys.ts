@@ -2,6 +2,8 @@ import type { Role } from '@/types';
 
 export const queryKeys = {
   categories: ['categories'] as const,
+  profile: (userId?: string | null) =>
+    ['profile', userId ?? 'anonymous'] as const,
   customerRequests: (userId?: string | null, role?: Role | string | null) =>
     ['requests', userId ?? 'anonymous', role ?? 'unknown'] as const,
   incomingRequests: (userId?: string | null) =>
