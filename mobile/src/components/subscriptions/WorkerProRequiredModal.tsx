@@ -23,9 +23,9 @@ export function WorkerProRequiredModal({
   onViewWorkerPro,
 }: Props) {
   const { t, locale } = useLanguage();
-  const used = access?.freeRequestsUsed ?? access?.acceptedRequestCount ?? 5;
-  const limit = access?.freeRequestLimit ?? access?.freeAcceptedRequestLimit ?? 5;
-  const remaining = access?.freeRequestsRemaining ?? access?.remainingFreeRequests ?? 0;
+  const used = access?.freeRequestsUsed ?? access?.acceptedRequestCount;
+  const limit = access?.freeRequestLimit ?? access?.freeAcceptedRequestLimit;
+  const remaining = access?.freeRequestsRemaining ?? access?.remainingFreeRequests;
   const price = t('subscription.price.monthly', {
     price: getWorkerProPrice(locale, storeLocalizedPrice),
   });
@@ -58,14 +58,20 @@ export function WorkerProRequiredModal({
             </Stack>
 
             <View style={styles.usageBox}>
-              <Row justify="space-between">
-                <BodySm color={colors.textSecondary}>{t('subscription.freeUsed')}</BodySm>
-                <BodySm weight="bold">{t('subscription.freeUsedValue', { used, limit })}</BodySm>
-              </Row>
-              <Row justify="space-between">
-                <BodySm color={colors.textSecondary}>{t('subscription.freeRemaining')}</BodySm>
-                <BodySm weight="bold">{remaining}</BodySm>
-              </Row>
+              {access && typeof used === 'number' && typeof limit === 'number' && typeof remaining === 'number' ? (
+                <>
+                  <Row justify="space-between">
+                    <BodySm color={colors.textSecondary}>{t('subscription.freeUsed')}</BodySm>
+                    <BodySm weight="bold">{t('subscription.freeUsedValue', { used, limit })}</BodySm>
+                  </Row>
+                  <Row justify="space-between">
+                    <BodySm color={colors.textSecondary}>{t('subscription.freeRemaining')}</BodySm>
+                    <BodySm weight="bold">{remaining}</BodySm>
+                  </Row>
+                </>
+              ) : (
+                <BodySm color={colors.textSecondary}>{t('subscription.loadingAccess')}</BodySm>
+              )}
               <Row justify="space-between">
                 <BodySm color={colors.textSecondary}>{t('subscription.planPrice')}</BodySm>
                 <BodySm weight="bold">{price}</BodySm>

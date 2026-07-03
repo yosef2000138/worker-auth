@@ -12,6 +12,8 @@ import {
   notifyEligibleWorkersForRequest,
 } from './requestMatching.service';
 
+export const ACTIVE_DUPLICATE_REQUEST_STATUSES: RequestStatus[] = ['PENDING', 'ACCEPTED', 'ON_THE_WAY', 'IN_PROGRESS'];
+
 // ─── FSM ─────────────────────────────────────────────────────────────────────
 type Actor = 'CUSTOMER' | 'WORKER';
 
@@ -107,6 +109,15 @@ function pushStatusNotification(
   }
 }
 
+export function duplicateActiveRequestError(duplicate: { id: string; status: RequestStatus }) {
+  return {
+    status: 409,
+    code: 'DUPLICATE_ACTIVE_REQUEST',
+    message: 'You already have an active request for this service at this location.',
+    details: duplicate,
+  };
+}
+
 async function addWorkerOfferState<T extends { id: string }>(items: T[], workerId: string) {
   if (items.length === 0) return items;
   const offers = await db.requestOffer.findMany({
@@ -157,7 +168,7 @@ export async function createRequest(
     where: {
       customerId,
       categoryId: body.categoryId,
-      status: { in: ['PENDING', 'ACCEPTED', 'ON_THE_WAY', 'IN_PROGRESS'] },
+      status: { in: ACTIVE_DUPLICATE_REQUEST_STATUSES },
       OR: [
         { address: body.address },
         { lat: body.lat, lng: body.lng },
@@ -166,12 +177,7 @@ export async function createRequest(
     select: { id: true, status: true },
   });
   if (duplicate) {
-    throw {
-      status: 409,
-      code: 'DUPLICATE_ACTIVE_REQUEST',
-      message: 'You already have an active request for this service at this location.',
-      details: duplicate,
-    };
+    throw duplicateActiveRequestError(duplicate);
   }
 
   const imageUrls =
@@ -272,10 +278,18 @@ export async function listRequests(
   const itemsWithViewerOfferState = role === 'WORKER' && workerIdForOfferState
     ? await addWorkerOfferState(itemsWithOfferMeta, workerIdForOfferState)
     : itemsWithOfferMeta;
+  const finalItems = role === 'WORKER'
+    ? itemsWithViewerOfferState.filter(item => {
+      if (item.status !== 'PENDING' || item.worker) return true;
+      if ('hasMyOffer' in item && item.hasMyOffer) return true;
+      return item.offerCount < item.maxOffers;
+    })
+    : itemsWithViewerOfferState;
+  const totalForResponse = role === 'WORKER' && status === 'PENDING' ? finalItems.length : total;
 
   return {
-    items: itemsWithViewerOfferState,
-    pagination: { total, page, limit, pages: Math.ceil(total / limit) },
+    items: finalItems,
+    pagination: { total: totalForResponse, page, limit, pages: Math.ceil(totalForResponse / limit) },
   };
 }
 

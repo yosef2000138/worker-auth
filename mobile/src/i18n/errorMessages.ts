@@ -6,6 +6,7 @@ export const apiErrorCodeTranslationKeys: Record<string, TranslationKey> = {
   FORBIDDEN: 'errors.forbidden',
   WORKER_SUBSCRIPTION_REQUIRED: 'errors.workerProRequired',
   WORKER_PRO_REQUIRED: 'errors.workerProRequired',
+  DUPLICATE_ACTIVE_REQUEST: 'errors.duplicateActiveRequest',
   WORKER_PRO_NOT_AVAILABLE: 'subscription.message.backendDisabled',
   REQUEST_NOT_FOUND: 'errors.notFound',
   REQUEST_NOT_COMPLETED: 'errors.requestNotCompleted',

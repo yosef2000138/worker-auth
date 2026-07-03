@@ -30,7 +30,7 @@ const eligibleWorkerSelect = {
   availability: { select: { dayOfWeek: true, startTime: true, endTime: true } },
 } satisfies Prisma.WorkerSelect;
 
-type EligibleWorker = Prisma.WorkerGetPayload<{ select: typeof eligibleWorkerSelect }>;
+export type EligibleWorker = Prisma.WorkerGetPayload<{ select: typeof eligibleWorkerSelect }>;
 
 export type WorkerEligibility = {
   worker: EligibleWorker;
@@ -72,6 +72,17 @@ function assertBasicWorkerEligibility(worker: EligibleWorker | null, request: Ma
   }
 }
 
+export function assertWorkerCanSubmitOffer(access: WorkerAcceptanceAccess) {
+  if (!access.canAcceptMoreRequests) {
+    throw apiError(
+      402,
+      'WORKER_SUBSCRIPTION_REQUIRED',
+      'An active Worker Pro subscription is required to submit more offers.',
+      access,
+    );
+  }
+}
+
 export async function assertWorkerEligibleForRequest(
   client: DbClient,
   userId: string,
@@ -85,14 +96,7 @@ export async function assertWorkerEligibleForRequest(
   assertBasicWorkerEligibility(worker, request);
 
   const access = await getWorkerAcceptanceAccess(userId, client, worker!.id);
-  if (!access.canAcceptMoreRequests) {
-    throw apiError(
-      402,
-      'WORKER_SUBSCRIPTION_REQUIRED',
-      'An active Worker Pro subscription is required to submit more offers.',
-      access,
-    );
-  }
+  assertWorkerCanSubmitOffer(access);
 
   return { worker: worker!, access };
 }
@@ -122,6 +126,23 @@ export async function findEligibleWorkersForRequest(
   return eligible;
 }
 
+export function buildIncomingRequestWhereFromWorker(
+  worker: EligibleWorker | null,
+  userId: string,
+): Prisma.ServiceRequestWhereInput | null {
+  if (!worker) return null;
+  if (worker.user.role !== 'WORKER' || !worker.user.isActive || !worker.approvedAt || !worker.isAvailable) return null;
+  const categoryIds = worker.categories.map(item => item.categoryId);
+  if (categoryIds.length === 0) return null;
+
+  return {
+    status: 'PENDING',
+    workerId: null,
+    customerId: { not: userId },
+    categoryId: { in: categoryIds },
+  };
+}
+
 export async function buildIncomingRequestWhereForWorker(
   client: DbClient,
   userId: string,
@@ -131,20 +152,7 @@ export async function buildIncomingRequestWhereForWorker(
     select: eligibleWorkerSelect,
   });
 
-  if (!worker) return null;
-  if (worker.user.role !== 'WORKER' || !worker.user.isActive || !worker.approvedAt || !worker.isAvailable) return null;
-  const categoryIds = worker.categories.map(item => item.categoryId);
-  if (categoryIds.length === 0) return null;
-
-  const access = await getWorkerAcceptanceAccess(userId, client, worker.id);
-  if (!access.canAcceptMoreRequests) return null;
-
-  return {
-    status: 'PENDING',
-    workerId: null,
-    customerId: { not: userId },
-    categoryId: { in: categoryIds },
-  };
+  return buildIncomingRequestWhereFromWorker(worker, userId);
 }
 
 export async function getRequestOfferMeta(

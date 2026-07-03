@@ -54,8 +54,7 @@ function defaultFutureDate() {
   return new Date(Date.now() + 60 * 60 * 1000);
 }
 
-function canOfferFromAccess(access?: WorkerAcceptanceAccess) {
-  if (!access) return true;
+function canOfferFromAccess(access: WorkerAcceptanceAccess) {
   const explicit = access.canAcceptRequest ?? access.canAcceptMoreRequests;
   if (typeof explicit === 'boolean') return explicit;
   const used = access.freeRequestsUsed ?? access.acceptedRequestCount;
@@ -209,6 +208,9 @@ export function WorkerOfferActionCard({
     queryFn: subscriptionApi.me,
     enabled: Boolean(user?.id),
     retry: 1,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnReconnect: true,
   });
 
   const latestWorkerAccess =
@@ -295,7 +297,9 @@ export function WorkerOfferActionCard({
   const isAssignedToMe = request.worker?.user?.id === user?.id || request.worker?.userId === user?.id;
   const assignedToAnother = request.status !== 'PENDING' && Boolean(request.worker) && !isAssignedToMe && !selectedOffer;
   const offerLimitReached = (offersOpen ?? request.offersOpen) === false && !activeOffer && request.status === 'PENDING';
-  const canUseFreeOrPro = canOfferFromAccess(latestWorkerAccess);
+  const accessLoading = accessQuery.isLoading && !latestWorkerAccess;
+  const accessUnavailable = accessQuery.isError && !latestWorkerAccess;
+  const canUseFreeOrPro = latestWorkerAccess ? canOfferFromAccess(latestWorkerAccess) : false;
   const busy = sendOffer.isPending || withdrawOffer.isPending || loadingOfferState;
   const canMakeOffer = request.status === 'PENDING' && !activeOffer && !offerLimitReached;
   const selectedAtLabel = selectedAt
@@ -308,6 +312,12 @@ export function WorkerOfferActionCard({
 
   const submit = () => {
     setNotice(null);
+    if (accessLoading) return;
+    if (accessUnavailable) {
+      void accessQuery.refetch();
+      setNotice({ tone: 'warning', message: t('subscription.serverAccessUnavailable') });
+      return;
+    }
     if (!canUseFreeOrPro) {
       openPaywall();
       return;
@@ -338,6 +348,7 @@ export function WorkerOfferActionCard({
   return (
     <Stack gap={spacing.md}>
       {notice ? <Banner tone={notice.tone} message={notice.message} /> : null}
+      {accessUnavailable ? <Banner tone="warning" message={t('subscription.serverAccessUnavailable')} /> : null}
       {totalOffers > 0 && !activeOffer ? (
         <BodySm color={colors.textSecondary}>{t('offers.count', { count: totalOffers, limit })}</BodySm>
       ) : null}
@@ -484,11 +495,29 @@ export function WorkerOfferActionCard({
             </View>
           ) : null}
           <Button
-            title={!canUseFreeOrPro ? t('offers.subscribeToMakeOffer') : editing ? t('offers.sendOffer') : t('offers.makeOffer')}
+            title={
+              accessLoading
+                ? t('common.loading')
+                : accessUnavailable
+                ? t('common.retry')
+                : !canUseFreeOrPro
+                ? t('offers.subscribeToMakeOffer')
+                : editing
+                ? t('offers.sendOffer')
+                : t('offers.makeOffer')
+            }
             loading={sendOffer.isPending}
-            disabled={busy && !sendOffer.isPending}
-            icon={!canUseFreeOrPro ? <Ionicons name="lock-closed-outline" size={16} color={colors.textInverse} /> : undefined}
+            disabled={(busy && !sendOffer.isPending) || accessLoading}
+            icon={
+              !accessLoading && !accessUnavailable && !canUseFreeOrPro
+                ? <Ionicons name="lock-closed-outline" size={16} color={colors.textInverse} />
+                : undefined
+            }
             onPress={() => {
+              if (accessUnavailable) {
+                void accessQuery.refetch();
+                return;
+              }
               if (!canUseFreeOrPro) {
                 openPaywall();
                 return;

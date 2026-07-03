@@ -110,6 +110,9 @@ export default function DashboardScreen({ navigation }: Props) {
     queryFn: subscriptionApi.me,
     enabled: Boolean(user?.id),
     retry: 1,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnReconnect: true,
   });
   const refetchSubscription = subscriptionQuery.refetch;
   useFocusEffect(
@@ -139,7 +142,20 @@ export default function DashboardScreen({ navigation }: Props) {
           <Button title={t('nav.workCalendar')} variant="outline" fullWidth={false} style={styles.quickAction} onPress={() => navigation.navigate('Availability')} />
           <Button title={t('common.map')} variant="outline" fullWidth={false} style={styles.quickAction} onPress={() => navigation.navigate('Map')} />
         </Row>
-        <SubscriptionSummaryCard status={subscriptionQuery.data} t={t} locale={locale} onPress={() => navigation.navigate('Subscription')} />
+        {subscriptionQuery.isLoading ? (
+          <Card>
+            <BodySm color={colors.textSecondary}>{t('subscription.loadingAccess')}</BodySm>
+          </Card>
+        ) : subscriptionQuery.isError ? (
+          <Card>
+            <Stack gap={spacing.sm}>
+              <BodySm color={colors.textSecondary}>{t('subscription.serverAccessUnavailable')}</BodySm>
+              <Button title={t('common.retry')} variant="outline" size="sm" onPress={() => subscriptionQuery.refetch()} />
+            </Stack>
+          </Card>
+        ) : (
+          <SubscriptionSummaryCard status={subscriptionQuery.data} t={t} locale={locale} onPress={() => navigation.navigate('Subscription')} />
+        )}
       </View>
 
       {workerQuery.isLoading || requestsQuery.isLoading ? (

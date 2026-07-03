@@ -49,6 +49,9 @@ export function useWorkerProSubscription() {
     queryFn: subscriptionApi.me,
     enabled: Boolean(userId),
     retry: 1,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnReconnect: true,
   });
 
   const refresh = useCallback(() => {

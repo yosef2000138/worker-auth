@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -12,6 +12,7 @@ import { useLocation } from '@/hooks/useLocation';
 import { getLocalizedCategoryName, useLanguage } from '@/i18n';
 import { colors, spacing } from '@/theme';
 import { localizedApiErrorMessage } from '@/utils/localizedErrors';
+import { getDuplicateActiveRequestInfo } from '@/utils/duplicateRequestError';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateRequest'>;
 
@@ -48,6 +49,22 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
       images: image ? [{ uri: image.uri, name: image.fileName ?? undefined, type: image.mimeType ?? undefined }] : undefined,
     }),
     onSuccess: request => navigation.replace('RequestDetails', { requestId: request.id }),
+    onError: (error) => {
+      const duplicate = getDuplicateActiveRequestInfo(error);
+      if (!duplicate) return;
+
+      Alert.alert(
+        t('requests.create.duplicateTitle'),
+        t('errors.duplicateActiveRequest'),
+        [
+          { text: t('common.close'), style: 'cancel' },
+          {
+            text: t('requests.create.openExistingRequest'),
+            onPress: () => navigation.navigate('RequestDetails', { requestId: duplicate.requestId }),
+          },
+        ],
+      );
+    },
   });
 
   const getValidationMessage = () => {
