@@ -56,12 +56,20 @@ export function formatAppTime(value?: string | number | Date | null, languageOrL
 
 export function formatPlural(
   languageOrLocale: LocaleInput,
-  count: number,
+  count: number | null | undefined,
   keys: PluralKeys,
   t: TranslateFn,
   values?: TranslationValues,
 ) {
   const locale = resolveLocale(languageOrLocale);
-  const rule = new Intl.PluralRules(locale).select(count);
-  return t(keys[rule] ?? keys.other, { count, ...values });
+  const safeCount = typeof count === 'number' && Number.isFinite(count) ? count : 0;
+  const PluralRulesCtor = globalThis.Intl?.PluralRules;
+
+  if (typeof PluralRulesCtor !== 'function') {
+    const fallbackRule: Intl.LDMLPluralRule = safeCount === 1 ? 'one' : 'other';
+    return t(keys[fallbackRule] ?? keys.other, { count: safeCount, ...values });
+  }
+
+  const rule = new PluralRulesCtor(locale).select(safeCount);
+  return t(keys[rule] ?? keys.other, { count: safeCount, ...values });
 }
