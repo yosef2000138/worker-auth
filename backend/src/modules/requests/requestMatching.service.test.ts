@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Prisma } from '@prisma/client';
 import { buildWorkerAcceptanceAccess } from '../subscriptions/subscriptions.service';
 import {
   ACTIVE_OFFER_STATUSES,
   buildIncomingRequestWhereFromWorker,
   assertWorkerCanSubmitOffer,
+  isWorkerProfileCompleteForMatching,
   type EligibleWorker,
 } from './requestMatching.service';
 
@@ -67,7 +69,10 @@ test('incoming request visibility can still be built for exhausted workers', () 
   const worker = {
     id: 'worker-1',
     userId: 'worker-user-1',
-    user: { role: 'WORKER', isActive: true },
+    bio: 'Experienced electrical worker for home repairs.',
+    yearsExp: 3,
+    hourlyRate: new Prisma.Decimal(120),
+    user: { id: 'worker-user-1', role: 'WORKER', isActive: true, fullName: 'Test Worker', phone: '0501234567', avatarUrl: 'https://example.com/avatar.jpg' },
     approvedAt: new Date(),
     isAvailable: true,
     categories: [{ categoryId: 'electrical' }],
@@ -82,11 +87,55 @@ test('incoming request visibility can still be built for exhausted workers', () 
   });
 });
 
+test('complete onboarded worker can see incoming requests before manual approval', () => {
+  const worker = {
+    id: 'worker-1',
+    userId: 'worker-user-1',
+    bio: 'Experienced electrical worker for home repairs.',
+    yearsExp: 3,
+    hourlyRate: new Prisma.Decimal(120),
+    user: { id: 'worker-user-1', role: 'WORKER', isActive: true, fullName: 'Test Worker', phone: '0501234567', avatarUrl: 'https://example.com/avatar.jpg' },
+    approvedAt: null,
+    isAvailable: true,
+    categories: [{ categoryId: 'electrical' }],
+    availability: [{ dayOfWeek: 0, startTime: '09:00', endTime: '18:00' }],
+  } as EligibleWorker;
+
+  assert.equal(isWorkerProfileCompleteForMatching(worker), true);
+  assert.deepEqual(buildIncomingRequestWhereFromWorker(worker, 'worker-user-1'), {
+    status: 'PENDING',
+    workerId: null,
+    customerId: { not: 'worker-user-1' },
+    categoryId: { in: ['electrical'] },
+  });
+});
+
+test('incomplete unapproved worker cannot see incoming requests', () => {
+  const worker = {
+    id: 'worker-1',
+    userId: 'worker-user-1',
+    bio: null,
+    yearsExp: 0,
+    hourlyRate: null,
+    user: { id: 'worker-user-1', role: 'WORKER', isActive: true, fullName: 'Test Worker', phone: '0501234567', avatarUrl: null },
+    approvedAt: null,
+    isAvailable: true,
+    categories: [{ categoryId: 'electrical' }],
+    availability: [],
+  } as EligibleWorker;
+
+  assert.equal(isWorkerProfileCompleteForMatching(worker), false);
+  assert.equal(buildIncomingRequestWhereFromWorker(worker, 'worker-user-1'), null);
+});
+
 test('unrelated-category workers are excluded by the incoming category filter', () => {
   const worker = {
     id: 'worker-1',
     userId: 'worker-user-1',
-    user: { role: 'WORKER', isActive: true },
+    bio: 'Experienced plumbing worker for home repairs.',
+    yearsExp: 3,
+    hourlyRate: new Prisma.Decimal(120),
+    user: { id: 'worker-user-1', role: 'WORKER', isActive: true, fullName: 'Test Worker', phone: '0501234567', avatarUrl: 'https://example.com/avatar.jpg' },
     approvedAt: new Date(),
     isAvailable: true,
     categories: [{ categoryId: 'plumbing' }],

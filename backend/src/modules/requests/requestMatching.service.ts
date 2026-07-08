@@ -23,9 +23,12 @@ type MatchRequest = {
 const eligibleWorkerSelect = {
   id: true,
   userId: true,
+  bio: true,
+  yearsExp: true,
+  hourlyRate: true,
   approvedAt: true,
   isAvailable: true,
-  user: { select: { id: true, role: true, isActive: true, fullName: true } },
+  user: { select: { id: true, role: true, isActive: true, fullName: true, phone: true, avatarUrl: true } },
   categories: { select: { categoryId: true } },
   availability: { select: { dayOfWeek: true, startTime: true, endTime: true } },
 } satisfies Prisma.WorkerSelect;
@@ -54,6 +57,32 @@ export function workerMatchesSchedule(worker: Pick<EligibleWorker, 'availability
   return worker.availability.some(slot => slot.dayOfWeek === scheduled.getDay());
 }
 
+const PHONE_REGEX = /^(\+?[1-9]\d{7,14}|0\d{8,14})$/;
+
+export function isWorkerProfileCompleteForMatching(worker: EligibleWorker) {
+  const fullName = worker.user.fullName?.trim() ?? '';
+  const phone = worker.user.phone?.trim() ?? '';
+  const bio = worker.bio?.trim() ?? '';
+  const hourlyRate = Number(worker.hourlyRate ?? 0);
+
+  return (
+    fullName.length >= 2 &&
+    PHONE_REGEX.test(phone) &&
+    Boolean(worker.user.avatarUrl) &&
+    bio.length >= 20 &&
+    Number.isFinite(worker.yearsExp) &&
+    worker.yearsExp >= 0 &&
+    Number.isFinite(hourlyRate) &&
+    hourlyRate > 0 &&
+    worker.categories.length > 0 &&
+    worker.availability.length > 0
+  );
+}
+
+function canWorkerReceiveIncomingRequests(worker: EligibleWorker) {
+  return Boolean(worker.approvedAt) || isWorkerProfileCompleteForMatching(worker);
+}
+
 function assertBasicWorkerEligibility(worker: EligibleWorker | null, request: MatchRequest) {
   if (!worker) throw apiError(404, 'WORKER_PROFILE_NOT_FOUND', 'Worker profile not found');
   if (worker.userId === request.customerId) {
@@ -62,7 +91,9 @@ function assertBasicWorkerEligibility(worker: EligibleWorker | null, request: Ma
   if (worker.user.role !== 'WORKER' || !worker.user.isActive) {
     throw apiError(403, 'WORKER_NOT_ELIGIBLE', 'Worker account is not eligible');
   }
-  if (!worker.approvedAt) throw apiError(403, 'WORKER_NOT_APPROVED', 'Worker not yet approved');
+  if (!canWorkerReceiveIncomingRequests(worker)) {
+    throw apiError(403, 'WORKER_PROFILE_INCOMPLETE', 'Worker profile must be completed before receiving requests');
+  }
   if (!worker.isAvailable) throw apiError(403, 'WORKER_UNAVAILABLE', 'Worker is not available for new offers');
   if (!worker.categories.some(item => item.categoryId === request.categoryId)) {
     throw apiError(403, 'WORKER_CATEGORY_MISMATCH', 'Worker does not match this service category');
@@ -107,7 +138,6 @@ export async function findEligibleWorkersForRequest(
 ): Promise<WorkerEligibility[]> {
   const workers = await client.worker.findMany({
     where: {
-      approvedAt: { not: null },
       isAvailable: true,
       userId: { not: request.customerId },
       user: { role: 'WORKER', isActive: true },
@@ -118,6 +148,7 @@ export async function findEligibleWorkersForRequest(
 
   const eligible: WorkerEligibility[] = [];
   for (const worker of workers) {
+    if (!canWorkerReceiveIncomingRequests(worker)) continue;
     if (!workerMatchesSchedule(worker, request.scheduledAt)) continue;
     eligible.push({ worker });
   }
@@ -130,7 +161,12 @@ export function buildIncomingRequestWhereFromWorker(
   userId: string,
 ): Prisma.ServiceRequestWhereInput | null {
   if (!worker) return null;
-  if (worker.user.role !== 'WORKER' || !worker.user.isActive || !worker.approvedAt || !worker.isAvailable) return null;
+  if (
+    worker.user.role !== 'WORKER'
+    || !worker.user.isActive
+    || !worker.isAvailable
+    || !canWorkerReceiveIncomingRequests(worker)
+  ) return null;
   const categoryIds = worker.categories.map(item => item.categoryId);
   if (categoryIds.length === 0) return null;
 
