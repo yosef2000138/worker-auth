@@ -26,9 +26,14 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [address, setAddress] = useState('');
+  const [showManualAddress, setShowManualAddress] = useState(false);
+  const [useCurrentCoords, setUseCurrentCoords] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [locationMessage, setLocationMessage] = useState<string | null>(null);
   const [image, setImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const { location, requestLocation } = useLocation();
+  const selectedLat = useCurrentCoords ? location?.coords.latitude : undefined;
+  const selectedLng = useCurrentCoords ? location?.coords.longitude : undefined;
 
   const { data: categories = [] } = useQuery({
     queryKey: ['categories'],
@@ -46,9 +51,9 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
       categoryId,
       title: title.trim(),
       description: description.trim(),
-      address: address.trim(),
-      lat: location!.coords.latitude,
-      lng: location!.coords.longitude,
+      address: address.trim() || undefined,
+      lat: selectedLat,
+      lng: selectedLng,
       paymentMethod: 'CASH',
       images: image ? [{ uri: image.uri, name: image.fileName ?? undefined, type: image.mimeType ?? undefined }] : undefined,
     }),
@@ -80,8 +85,7 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
     if (!categoryId) return t('requests.create.categoryRequired');
     if (title.trim().length < 5) return t('requests.create.titleRequired');
     if (description.trim().length < 10) return t('requests.create.descriptionRequired');
-    if (address.trim().length < 5) return t('requests.create.addressRequired');
-    if (!location) return t('requests.create.locationRequired');
+    if (address.trim().length > 0 && address.trim().length < 5) return t('requests.create.addressRequired');
     return null;
   };
 
@@ -101,6 +105,33 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
   const pick = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
     if (!res.canceled) setImage(res.assets[0]);
+  };
+
+  const handleUseCurrentLocation = async () => {
+    setLocationMessage(null);
+    const current = await requestLocation();
+    if (current) {
+      setUseCurrentCoords(true);
+      setSubmitError(null);
+      return;
+    }
+    setUseCurrentCoords(false);
+    setLocationMessage(t('requests.create.locationPermissionDeniedContinue'));
+  };
+
+  const handleSkipLocation = () => {
+    setUseCurrentCoords(false);
+    setShowManualAddress(false);
+    setAddress('');
+    setLocationMessage(t('requests.create.locationSkipped'));
+    setSubmitError(null);
+  };
+
+  const handleClearLocation = () => {
+    setUseCurrentCoords(false);
+    setAddress('');
+    setLocationMessage(null);
+    setSubmitError(null);
   };
 
   return (
@@ -163,26 +194,78 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
             multiline
             style={{ minHeight: 84, textAlignVertical: 'top' }}
           />
-          <Field
-            label={t('requests.create.address')}
-            placeholder={t('requests.create.addressPlaceholder')}
-            value={address}
-            onChangeText={value => {
-              setAddress(value);
-              setSubmitError(null);
-            }}
-            helperText={address.length > 0 && address.trim().length < 5 ? t('requests.create.minimum5') : undefined}
-          />
+          <Card style={styles.locationCard}>
+            <Stack gap={spacing.sm}>
+              <Row gap={spacing.sm} align="center">
+                <Ionicons name="location-outline" size={18} color={colors.primary} />
+                <BodySm weight="bold">{t('requests.create.locationOptionalTitle')}</BodySm>
+              </Row>
+              <BodySm color={colors.textSecondary}>{t('requests.create.locationOptionalHelper')}</BodySm>
+
+              {showManualAddress ? (
+                <Field
+                  label={t('requests.create.manualAddress')}
+                  placeholder={t('requests.create.addressPlaceholder')}
+                  value={address}
+                  onChangeText={value => {
+                    setAddress(value);
+                    setLocationMessage(null);
+                    setSubmitError(null);
+                  }}
+                  helperText={address.length > 0 && address.trim().length < 5 ? t('requests.create.minimum5') : undefined}
+                />
+              ) : null}
+
+              {useCurrentCoords && selectedLat != null && selectedLng != null ? (
+                <BodySm color={colors.success}>{t('requests.create.currentLocationSelected')}</BodySm>
+              ) : null}
+              {locationMessage ? <BodySm color={colors.textSecondary}>{locationMessage}</BodySm> : null}
+
+              <Row gap={spacing.sm} wrap>
+                <Button
+                  title={t('requests.create.addCurrentLocation')}
+                  variant="outline"
+                  size="sm"
+                  fullWidth={false}
+                  icon={<Ionicons name="locate-outline" size={16} color={colors.textPrimary} />}
+                  onPress={() => { void handleUseCurrentLocation(); }}
+                  style={styles.locationAction}
+                />
+                <Button
+                  title={t('requests.create.enterAddressManually')}
+                  variant="outline"
+                  size="sm"
+                  fullWidth={false}
+                  icon={<Ionicons name="create-outline" size={16} color={colors.textPrimary} />}
+                  onPress={() => {
+                    setShowManualAddress(true);
+                    setLocationMessage(null);
+                  }}
+                  style={styles.locationAction}
+                />
+                <Button
+                  title={t('requests.create.skipLocation')}
+                  variant="ghost"
+                  size="sm"
+                  fullWidth={false}
+                  onPress={handleSkipLocation}
+                  style={styles.locationAction}
+                />
+                {(useCurrentCoords || address.trim()) ? (
+                  <Button
+                    title={t('requests.create.clearLocation')}
+                    variant="ghost"
+                    size="sm"
+                    fullWidth={false}
+                    onPress={handleClearLocation}
+                    style={styles.locationAction}
+                  />
+                ) : null}
+              </Row>
+            </Stack>
+          </Card>
 
           <Row gap={spacing.sm}>
-            <Button
-              title={location ? t('requests.create.locationAdded') : t('requests.create.useCurrentLocation')}
-              variant="outline"
-              fullWidth={false}
-              icon={<Ionicons name="locate-outline" size={16} color={colors.textPrimary} />}
-              onPress={() => { void requestLocation(); }}
-              style={{ flex: 1 }}
-            />
             <Button
               title={image ? t('requests.create.imageAdded') : t('requests.create.addImage')}
               variant="outline"
@@ -204,4 +287,6 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.lg, paddingBottom: spacing['4xl'], gap: spacing.lg },
+  locationCard: { backgroundColor: colors.brandSoftest },
+  locationAction: { flexBasis: '48%', flexGrow: 1 },
 });

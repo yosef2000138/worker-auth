@@ -15,7 +15,17 @@ import {
   ConfirmOfferResponse,
   WorkerAcceptanceAccess,
 } from '@/types';
-export type CreateRequestPayload = { categoryId: string; title: string; description: string; lat: number; lng: number; address: string; scheduledAt?: string; paymentMethod: PaymentMethod; images?: { uri: string; name?: string; type?: string }[] };
+export type CreateRequestPayload = {
+  categoryId: string;
+  title: string;
+  description: string;
+  lat?: number | null;
+  lng?: number | null;
+  address?: string | null;
+  scheduledAt?: string;
+  paymentMethod: PaymentMethod;
+  images?: { uri: string; name?: string; type?: string }[];
+};
 export type RequestStatusUpdate = Exclude<RequestStatus, 'PENDING'>;
 export type CreateOfferPayload = {
   proposedPrice: number;
@@ -30,7 +40,7 @@ function normalizeStatusUpdateResult(data: RequestStatusUpdateResult) {
 }
 
 export const requestService = {
-  async create(payload: CreateRequestPayload) { const form = new FormData(); Object.entries(payload).forEach(([k, v]) => { if (k !== 'images' && v !== undefined) form.append(k, String(v)); }); payload.images?.forEach((img, i) => form.append('images', { uri: img.uri, name: img.name ?? `image-${i}.jpg`, type: img.type ?? 'image/jpeg' } as unknown as Blob)); return api.post('/requests', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then(unwrap<ServiceRequest>); },
+  async create(payload: CreateRequestPayload) { const form = new FormData(); Object.entries(payload).forEach(([k, v]) => { if (k !== 'images' && v !== undefined && v !== null) form.append(k, String(v)); }); payload.images?.forEach((img, i) => form.append('images', { uri: img.uri, name: img.name ?? `image-${i}.jpg`, type: img.type ?? 'image/jpeg' } as unknown as Blob)); return api.post('/requests', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then(unwrap<ServiceRequest>); },
   list: (params?: { status?: RequestStatus; page?: number; limit?: number }) => api.get('/requests', { params }).then(unwrap<Paginated<ServiceRequest>>),
   getOne: (id: string) => api.get(`/requests/${id}`).then(unwrap<ServiceRequest>),
   updateStatusResult: (id: string, status: RequestStatusUpdate, cancellationReason?: string) =>

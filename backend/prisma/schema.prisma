@@ -165,9 +165,9 @@ model ServiceRequest {
   title         String
   description   String
   status        RequestStatus @default(PENDING)
-  lat           Float
-  lng           Float
-  address       String
+  lat           Float?
+  lng           Float?
+  address       String?
   scheduledAt   DateTime?
   priceAgreed   Decimal?      @db.Decimal(10, 2)
   paymentMethod PaymentMethod @default(CASH)

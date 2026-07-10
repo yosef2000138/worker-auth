@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BodySm, Card, Row, Stack } from '@/components/ui';
 import { colors, fontWeight, spacing } from '@/theme';
+import { useLanguage } from '@/i18n';
 
 export function MapPreview({
   address,
@@ -13,6 +14,10 @@ export function MapPreview({
   lat?: number | null;
   lng?: number | null;
 }) {
+  const { t } = useLanguage();
+  const hasCoordinates = lat != null && lng != null;
+  const hasLocation = Boolean(address) || hasCoordinates;
+
   return (
     <Card>
       <Stack gap={spacing.md}>
@@ -27,8 +32,8 @@ export function MapPreview({
         <Row gap={spacing.sm} align="flex-start">
           <Ionicons name="navigate-outline" size={17} color={colors.textTertiary} />
           <Stack gap={2} style={{ flex: 1 }}>
-            <Text style={styles.address}>{address ?? 'No address provided'}</Text>
-            {lat != null && lng != null ? (
+            <Text style={styles.address}>{hasLocation ? address ?? t('requests.location.currentLocation') : t('requests.location.notProvided')}</Text>
+            {hasCoordinates ? (
               <BodySm color={colors.textSecondary}>{lat.toFixed(4)}, {lng.toFixed(4)}</BodySm>
             ) : null}
           </Stack>

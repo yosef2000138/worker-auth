@@ -41,6 +41,33 @@ test('create request schema accepts request-first payload without worker assignm
   assert.equal(Object.prototype.hasOwnProperty.call(parsed.body, 'workerId'), false);
 });
 
+test('create request schema accepts omitted location fields', () => {
+  const { lat, lng, address, ...withoutLocation } = validRequestBody;
+  const parsed = createRequestSchema.parse({ body: withoutLocation });
+
+  assert.equal(parsed.body.lat, undefined);
+  assert.equal(parsed.body.lng, undefined);
+  assert.equal(parsed.body.address, undefined);
+});
+
+test('create request schema accepts manual address without coordinates', () => {
+  const { lat, lng, ...addressOnly } = validRequestBody;
+  const parsed = createRequestSchema.parse({ body: addressOnly });
+
+  assert.equal(parsed.body.address, 'Dizengoff Street, Tel Aviv');
+  assert.equal(parsed.body.lat, undefined);
+  assert.equal(parsed.body.lng, undefined);
+});
+
+test('create request schema requires latitude and longitude together', () => {
+  assert.equal(createRequestSchema.safeParse({
+    body: { ...validRequestBody, lng: undefined },
+  }).success, false);
+  assert.equal(createRequestSchema.safeParse({
+    body: { ...validRequestBody, lat: undefined },
+  }).success, false);
+});
+
 test('create request schema rejects direct worker assignment fields', () => {
   for (const field of ['workerId', 'selectedWorkerId', 'assignedWorkerId']) {
     const parsed = createRequestSchema.safeParse({

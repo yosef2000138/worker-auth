@@ -250,14 +250,14 @@ export function JobLocationCard({
 }) {
   const { t } = useLanguage();
   const hasLocation = Boolean(address) || (lat != null && lng != null);
-  if (!hasLocation) return null;
+  const canOpenMap = hasLocation && onOpenMap;
 
   return (
     <Card>
       <Stack gap={spacing.md}>
         <Row justify="space-between" align="center" gap={spacing.md}>
           <H3>{t('jobs.details.location')}</H3>
-          {onOpenMap ? (
+          {canOpenMap ? (
             <Button
               title={t('jobs.details.viewLocation')}
               variant="outline"
@@ -270,25 +270,36 @@ export function JobLocationCard({
           ) : null}
         </Row>
 
-        <View style={styles.mapPanel}>
-          <View style={styles.mapRoadA} />
-          <View style={styles.mapRoadB} />
-          <View style={styles.mapPin}>
-            <Ionicons name="location" size={22} color={colors.textInverse} />
-          </View>
-        </View>
+        {hasLocation ? (
+          <>
+            <View style={styles.mapPanel}>
+              <View style={styles.mapRoadA} />
+              <View style={styles.mapRoadB} />
+              <View style={styles.mapPin}>
+                <Ionicons name="location" size={22} color={colors.textInverse} />
+              </View>
+            </View>
 
-        <Row gap={spacing.sm} align="flex-start">
-          <Ionicons name="location-outline" size={18} color={colors.textTertiary} />
-          <Stack gap={2} style={{ flex: 1 }}>
-            {address ? <Body weight="semibold">{address}</Body> : null}
-            {lat != null && lng != null ? (
-              <Caption>{lat.toFixed(4)}, {lng.toFixed(4)}</Caption>
-            ) : null}
-          </Stack>
-        </Row>
+            <Row gap={spacing.sm} align="flex-start">
+              <Ionicons name="location-outline" size={18} color={colors.textTertiary} />
+              <Stack gap={2} style={{ flex: 1 }}>
+                {address ? <Body weight="semibold">{address}</Body> : null}
+                {lat != null && lng != null ? (
+                  <Caption>{lat.toFixed(4)}, {lng.toFixed(4)}</Caption>
+                ) : null}
+              </Stack>
+            </Row>
+          </>
+        ) : (
+          <Row gap={spacing.sm} align="flex-start">
+            <Ionicons name="location-outline" size={18} color={colors.textTertiary} />
+            <Body color={colors.textSecondary} style={{ flex: 1 }}>
+              {t('requests.location.customerDidNotAdd')}
+            </Body>
+          </Row>
+        )}
 
-        {onOpenExternalNavigation ? (
+        {hasLocation && onOpenExternalNavigation ? (
           <Button
             title={t('jobs.details.openExternalNavigation')}
             variant="ghost"

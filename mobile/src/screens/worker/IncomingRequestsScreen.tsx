@@ -94,19 +94,21 @@ export default function IncomingRequestsScreen() {
                     style={styles.requestAction}
                     onPress={() => navigation.navigate('ActiveJob', { requestId: item.id })}
                   />
-                  <Button
-                    title={t('common.map')}
-                    variant="outline"
-                    fullWidth={false}
-                    style={styles.requestAction}
-                    onPress={() => navigation.navigate('Map', {
-                      lat: item.lat,
-                      lng: item.lng,
-                      address: item.address,
-                      title: item.title,
-                      requestId: item.id,
-                    })}
-                  />
+                  {item.address || (item.lat != null && item.lng != null) ? (
+                    <Button
+                      title={t('common.map')}
+                      variant="outline"
+                      fullWidth={false}
+                      style={styles.requestAction}
+                      onPress={() => navigation.navigate('Map', {
+                        lat: item.lat,
+                        lng: item.lng,
+                        address: item.address,
+                        title: item.title,
+                        requestId: item.id,
+                      })}
+                    />
+                  ) : null}
                 </Row>
                 <WorkerOfferActionCard
                   request={item}

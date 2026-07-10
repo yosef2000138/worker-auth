@@ -3,25 +3,44 @@ import { z } from 'zod';
 // IDs are UUIDs (schema uses @default(uuid()))
 const uuidSchema = z.string().uuid('Invalid ID format');
 const emptyToUndefined = (value: unknown) => value === '' ? undefined : value;
+const optionalLatitude = z.preprocess(
+  emptyToUndefined,
+  z.coerce.number().min(-90).max(90).optional().nullable(),
+);
+const optionalLongitude = z.preprocess(
+  emptyToUndefined,
+  z.coerce.number().min(-180).max(180).optional().nullable(),
+);
 
 export const createRequestSchema = z.object({
   body: z.object({
     categoryId:    uuidSchema,
     title:         z.string().min(5, 'Title too short').max(200).trim(),
     description:   z.string().min(10, 'Description too short').max(2000).trim(),
-	    lat:           z.coerce.number().min(-90).max(90),
-	    lng:           z.coerce.number().min(-180).max(180),
-    address:       z.string().min(5).max(500).trim(),
+    lat:           optionalLatitude,
+    lng:           optionalLongitude,
+    address:       z.preprocess(
+      emptyToUndefined,
+      z.string().min(5).max(500).trim().optional().nullable(),
+    ),
     scheduledAt:   z.string().datetime().optional(),
     paymentMethod: z.enum(['ONLINE', 'CASH']).default('CASH'),
-	  }).strict().refine(
-	    data => !(data.lat === 0 && data.lng === 0),
-	    {
-	      message: 'Choose a valid service location',
-	      path: ['lat'],
-	    },
-	  ),
-	});
+  }).strict()
+    .refine(
+      data => (data.lat == null && data.lng == null) || (data.lat != null && data.lng != null),
+      {
+        message: 'Latitude and longitude must be provided together',
+        path: ['lat'],
+      },
+    )
+    .refine(
+      data => data.lat == null || data.lng == null || !(data.lat === 0 && data.lng === 0),
+      {
+        message: 'Choose a valid service location',
+        path: ['lat'],
+      },
+    ),
+});
 
 export const updateStatusSchema = z.object({
   params: z.object({ id: uuidSchema }),

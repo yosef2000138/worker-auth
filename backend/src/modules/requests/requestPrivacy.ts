@@ -37,7 +37,7 @@ export const requestSelect = {
 const PUBLIC_PENDING_ADDRESS = 'Approximate service area';
 
 function publicAreaFromAddress(address?: string | null) {
-  if (!address) return PUBLIC_PENDING_ADDRESS;
+  if (!address) return undefined;
   const parts = address
     .split(',')
     .map(part => part.trim())

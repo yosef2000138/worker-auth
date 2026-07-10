@@ -91,8 +91,8 @@ export function duplicateActiveRequestError(duplicate: { id: string; status: Req
   };
 }
 
-export function normalizeRequestAddress(address: string) {
-  return address.trim().toLowerCase().replace(/\s+/g, ' ');
+export function normalizeRequestAddress(address?: string | null) {
+  return (address ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 function toRadians(value: number) {
@@ -112,14 +112,18 @@ export function distanceKm(a: { lat: number; lng: number }, b: { lat: number; ln
 }
 
 function isSameDuplicateLocation(
-  existing: { address: string; lat: number; lng: number },
-  next: { address: string; lat: number; lng: number },
+  existing: { address?: string | null; lat?: number | null; lng?: number | null },
+  next: { address?: string | null; lat?: number | null; lng?: number | null },
 ) {
   const normalizedExistingAddress = normalizeRequestAddress(existing.address);
   const normalizedNextAddress = normalizeRequestAddress(next.address);
-  if (normalizedExistingAddress && normalizedExistingAddress === normalizedNextAddress) return true;
+  if (normalizedExistingAddress && normalizedNextAddress && normalizedExistingAddress === normalizedNextAddress) return true;
+  if (existing.lat == null || existing.lng == null || next.lat == null || next.lng == null) return false;
   if ((existing.lat === 0 && existing.lng === 0) || (next.lat === 0 && next.lng === 0)) return false;
-  return distanceKm(existing, next) <= DUPLICATE_DISTANCE_KM;
+  return distanceKm(
+    { lat: existing.lat, lng: existing.lng },
+    { lat: next.lat, lng: next.lng },
+  ) <= DUPLICATE_DISTANCE_KM;
 }
 
 async function addWorkerOfferState<T extends { id: string }>(items: T[], workerId: string) {
@@ -155,9 +159,9 @@ export async function createRequest(
     categoryId: string;
     title: string;
     description: string;
-    lat: number;
-    lng: number;
-    address: string;
+    lat?: number | null;
+    lng?: number | null;
+    address?: string | null;
     scheduledAt?: string;
     paymentMethod: 'ONLINE' | 'CASH';
   },
@@ -192,9 +196,9 @@ export async function createRequest(
       categoryId: body.categoryId,
       title: body.title,
       description: body.description,
-      lat: body.lat,
-      lng: body.lng,
-      address: body.address,
+      lat: body.lat ?? null,
+      lng: body.lng ?? null,
+      address: body.address?.trim() || null,
       scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : undefined,
       paymentMethod: body.paymentMethod,
       images: {

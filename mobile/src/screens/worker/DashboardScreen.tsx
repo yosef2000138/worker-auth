@@ -203,7 +203,7 @@ export default function DashboardScreen({ navigation }: Props) {
                 <Row justify="space-between" align="flex-start">
                   <Stack gap={spacing.xs} style={{ flex: 1 }}>
                     <Body weight="bold">{item.title}</Body>
-                    <BodySm color={colors.textSecondary}>{item.address}</BodySm>
+                    <BodySm color={colors.textSecondary}>{item.address ?? t('requests.location.notProvided')}</BodySm>
                     {item.createdAt ? <BodySm color={colors.textTertiary}>{formatAppDate(item.createdAt, locale)}</BodySm> : null}
                   </Stack>
                   <StatusBadge status={item.status} />
