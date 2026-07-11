@@ -10,10 +10,12 @@ export function getDuplicateActiveRequestInfo(error: unknown): DuplicateActiveRe
   const details = (error as { details?: unknown }).details;
   if (typeof details !== 'object' || details === null) return null;
 
-  const id = (details as { id?: unknown }).id;
+  const id = (details as { existingRequestId?: unknown; id?: unknown }).existingRequestId
+    ?? (details as { id?: unknown }).id;
   if (typeof id !== 'string' || id.length === 0) return null;
 
-  const status = (details as { status?: unknown }).status;
+  const status = (details as { existingRequestStatus?: unknown; status?: unknown }).existingRequestStatus
+    ?? (details as { status?: unknown }).status;
   return {
     requestId: id,
     ...(typeof status === 'string' && { status }),

@@ -27,6 +27,7 @@ import webhooksRoutes      from './modules/subscriptions/webhooks.routes';
 
 import { errorHandler } from './middlewares/errorHandler';
 import { initSockets }  from './sockets/index';
+import { buildHealthResponse } from './modules/health/health.service';
 
 const app = express();
 
@@ -86,7 +87,7 @@ app.use('/api/v1/admin',         adminRoutes);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_, res) => {
-  res.json({ status: 'ok', ts: new Date().toISOString() });
+  res.json(buildHealthResponse());
 });
 
 // ─── Error handler ────────────────────────────────────────────────────────────

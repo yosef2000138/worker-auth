@@ -168,6 +168,7 @@ model ServiceRequest {
   lat           Float?
   lng           Float?
   address       String?
+  activeJobKey  String?       @unique
   scheduledAt   DateTime?
   priceAgreed   Decimal?      @db.Decimal(10, 2)
   paymentMethod PaymentMethod @default(CASH)

@@ -18,7 +18,9 @@ import {
 } from './requestPrivacy';
 
 export const ACTIVE_DUPLICATE_REQUEST_STATUSES: RequestStatus[] = ['PENDING', 'ACCEPTED', 'ON_THE_WAY', 'IN_PROGRESS'];
+export const TERMINAL_REQUEST_STATUSES: RequestStatus[] = ['COMPLETED', 'CANCELLED'];
 const DUPLICATE_DISTANCE_KM = 0.2;
+const COORDINATE_BUCKET_PRECISION = 3;
 
 // ─── FSM ─────────────────────────────────────────────────────────────────────
 type Actor = 'CUSTOMER' | 'WORKER';
@@ -86,13 +88,72 @@ export function duplicateActiveRequestError(duplicate: { id: string; status: Req
   return {
     status: 409,
     code: 'DUPLICATE_ACTIVE_REQUEST',
-    message: 'You already have an active request for this service at this location.',
-    details: duplicate,
+    message: 'You already have an active request for this service.',
+    details: {
+      existingRequestId: duplicate.id,
+      existingRequestStatus: duplicate.status,
+    },
   };
 }
 
+export function normalizeRequestText(value?: string | null) {
+  return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 export function normalizeRequestAddress(address?: string | null) {
-  return (address ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return normalizeRequestText(address);
+}
+
+function coordinateBucket(lat: number, lng: number) {
+  const multiplier = 10 ** COORDINATE_BUCKET_PRECISION;
+  const roundedLat = Math.round(lat * multiplier) / multiplier;
+  const roundedLng = Math.round(lng * multiplier) / multiplier;
+  return `COORD:${roundedLat.toFixed(COORDINATE_BUCKET_PRECISION)},${roundedLng.toFixed(COORDINATE_BUCKET_PRECISION)}`;
+}
+
+export function buildRequestLocationBucket(input: { address?: string | null; lat?: number | null; lng?: number | null }) {
+  const normalizedAddress = normalizeRequestAddress(input.address);
+  if (normalizedAddress) return `ADDR:${normalizedAddress}`;
+  if (input.lat != null && input.lng != null && !(input.lat === 0 && input.lng === 0)) {
+    return coordinateBucket(input.lat, input.lng);
+  }
+  return 'NO_LOCATION';
+}
+
+export function buildActiveJobKey(input: {
+  customerId: string;
+  categoryId: string;
+  title: string;
+  description: string;
+  address?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+}) {
+  return [
+    input.customerId,
+    input.categoryId,
+    normalizeRequestText(input.title),
+    normalizeRequestText(input.description),
+    buildRequestLocationBucket(input),
+  ].join('|');
+}
+
+function isUniqueConstraintError(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+}
+
+async function findActiveDuplicateByJobKey(activeJobKey: string) {
+  return db.serviceRequest.findFirst({
+    where: {
+      activeJobKey,
+      status: { in: ACTIVE_DUPLICATE_REQUEST_STATUSES },
+    },
+    select: { id: true, status: true },
+  });
+}
+
+function activeJobKeyForStatus(status: RequestStatus) {
+  return TERMINAL_REQUEST_STATUSES.includes(status) ? null : undefined;
 }
 
 function toRadians(value: number) {
@@ -178,9 +239,10 @@ export async function createRequest(
       categoryId: body.categoryId,
       status: { in: ACTIVE_DUPLICATE_REQUEST_STATUSES },
     },
-    select: { id: true, status: true, address: true, lat: true, lng: true },
+    select: { id: true, status: true, address: true, lat: true, lng: true, activeJobKey: true },
   });
-  const duplicate = activeRequests.find(item => isSameDuplicateLocation(item, body));
+  const activeJobKey = buildActiveJobKey({ customerId, ...body });
+  const duplicate = activeRequests.find(item => item.activeJobKey === activeJobKey || isSameDuplicateLocation(item, body));
   if (duplicate) {
     throw duplicateActiveRequestError(duplicate);
   }
@@ -190,23 +252,33 @@ export async function createRequest(
       ? await Promise.all(files.map((f) => uploadBuffer(f.buffer, 'worker/requests')))
       : [];
 
-  const request = await db.serviceRequest.create({
-    data: {
-      customerId,
-      categoryId: body.categoryId,
-      title: body.title,
-      description: body.description,
-      lat: body.lat ?? null,
-      lng: body.lng ?? null,
-      address: body.address?.trim() || null,
-      scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : undefined,
-      paymentMethod: body.paymentMethod,
-      images: {
-        create: imageUrls.map((url, order) => ({ imageUrl: url, order })),
+  let request: Prisma.ServiceRequestGetPayload<{ select: typeof requestSelect }>;
+  try {
+    request = await db.serviceRequest.create({
+      data: {
+        customerId,
+        categoryId: body.categoryId,
+        title: body.title,
+        description: body.description,
+        lat: body.lat ?? null,
+        lng: body.lng ?? null,
+        address: body.address?.trim() || null,
+        activeJobKey,
+        scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : undefined,
+        paymentMethod: body.paymentMethod,
+        images: {
+          create: imageUrls.map((url, order) => ({ imageUrl: url, order })),
+        },
       },
-    },
-    select: requestSelect,
-  });
+      select: requestSelect,
+    });
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      const concurrentDuplicate = await findActiveDuplicateByJobKey(activeJobKey);
+      if (concurrentDuplicate) throw duplicateActiveRequestError(concurrentDuplicate);
+    }
+    throw error;
+  }
 
   void notifyEligibleWorkersForRequest({
     id: request.id,
@@ -425,6 +497,7 @@ export async function updateStatus(
     where: { id },
     data: {
       status: newStatus,
+      activeJobKey: activeJobKeyForStatus(newStatus),
     },
     select: requestSelect,
   });

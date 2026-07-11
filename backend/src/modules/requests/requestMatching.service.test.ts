@@ -147,3 +147,30 @@ test('unrelated-category workers are excluded by the incoming category filter', 
 
   assert.equal(categoryFilter.in?.includes('electrical'), false);
 });
+
+test('incoming request visibility does not require request location fields', () => {
+  const worker = {
+    id: 'worker-1',
+    userId: 'worker-user-1',
+    bio: 'Experienced electrical worker for home repairs.',
+    yearsExp: 3,
+    hourlyRate: new Prisma.Decimal(120),
+    user: { id: 'worker-user-1', role: 'WORKER', isActive: true, fullName: 'Test Worker', phone: '0501234567', avatarUrl: 'https://example.com/avatar.jpg' },
+    approvedAt: new Date(),
+    isAvailable: true,
+    categories: [{ categoryId: 'electrical' }],
+    availability: [],
+  } as EligibleWorker;
+
+  const where = buildIncomingRequestWhereFromWorker(worker, 'worker-user-1');
+
+  assert.equal('address' in (where ?? {}), false);
+  assert.equal('lat' in (where ?? {}), false);
+  assert.equal('lng' in (where ?? {}), false);
+  assert.deepEqual(where, {
+    status: 'PENDING',
+    workerId: null,
+    customerId: { not: 'worker-user-1' },
+    categoryId: { in: ['electrical'] },
+  });
+});

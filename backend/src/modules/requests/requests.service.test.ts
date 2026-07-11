@@ -2,15 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ACTIVE_DUPLICATE_REQUEST_STATUSES,
+  TERMINAL_REQUEST_STATUSES,
+  buildActiveJobKey,
+  buildRequestLocationBucket,
   distanceKm,
   duplicateActiveRequestError,
   normalizeRequestAddress,
+  normalizeRequestText,
 } from './requests.service';
 import { serializeRequestForViewer } from './requestPrivacy';
 import { assertOfferParticipant } from './offers.service';
 
 test('duplicate active request detection covers active customer request states', () => {
   assert.deepEqual(ACTIVE_DUPLICATE_REQUEST_STATUSES, ['PENDING', 'ACCEPTED', 'ON_THE_WAY', 'IN_PROGRESS']);
+});
+
+test('duplicate active request detection covers terminal request states', () => {
+  assert.deepEqual(TERMINAL_REQUEST_STATUSES, ['COMPLETED', 'CANCELLED']);
 });
 
 test('duplicate active request error returns a stable code and existing request id', () => {
@@ -22,13 +30,64 @@ test('duplicate active request error returns a stable code and existing request 
   assert.equal(error.status, 409);
   assert.equal(error.code, 'DUPLICATE_ACTIVE_REQUEST');
   assert.deepEqual(error.details, {
-    id: 'd7d53d86-a250-4443-b8a9-829be83c2869',
-    status: 'PENDING',
+    existingRequestId: 'd7d53d86-a250-4443-b8a9-829be83c2869',
+    existingRequestStatus: 'PENDING',
   });
+});
+
+test('request text normalization is stable for duplicate keys', () => {
+  assert.equal(normalizeRequestText('  Fix   The Sink  '), 'fix the sink');
 });
 
 test('request address normalization is stable for duplicate checks', () => {
   assert.equal(normalizeRequestAddress('  10 Exact   Street, Tel Aviv  '), '10 exact street, tel aviv');
+});
+
+test('active job key uses no-location bucket when location is missing', () => {
+  const key = buildActiveJobKey({
+    customerId: 'customer-1',
+    categoryId: 'category-1',
+    title: ' Fix   leaking sink ',
+    description: ' Water under  the cabinet ',
+  });
+
+  assert.equal(key, 'customer-1|category-1|fix leaking sink|water under the cabinet|NO_LOCATION');
+});
+
+test('active job key uses category id and not translated category label', () => {
+  const first = buildActiveJobKey({
+    customerId: 'customer-1',
+    categoryId: 'category-id',
+    title: 'Fix sink',
+    description: 'Water under cabinet',
+  });
+  const second = buildActiveJobKey({
+    customerId: 'customer-1',
+    categoryId: 'category-id',
+    title: 'Fix sink',
+    description: 'Water under cabinet',
+  });
+
+  assert.equal(first, second);
+  assert.equal(first.includes('Plumbing'), false);
+});
+
+test('active job key changes for different customer and category', () => {
+  const base = {
+    customerId: 'customer-1',
+    categoryId: 'category-1',
+    title: 'Fix sink',
+    description: 'Water under cabinet',
+  };
+
+  assert.notEqual(buildActiveJobKey(base), buildActiveJobKey({ ...base, customerId: 'customer-2' }));
+  assert.notEqual(buildActiveJobKey(base), buildActiveJobKey({ ...base, categoryId: 'category-2' }));
+});
+
+test('location bucket normalizes address and coordinate values', () => {
+  assert.equal(buildRequestLocationBucket({ address: '  10 Exact   Street, Tel Aviv ' }), 'ADDR:10 exact street, tel aviv');
+  assert.equal(buildRequestLocationBucket({ lat: 32.08531, lng: 34.78182 }), 'COORD:32.085,34.782');
+  assert.equal(buildRequestLocationBucket({ lat: 0, lng: 0 }), 'NO_LOCATION');
 });
 
 test('distance helper supports threshold based duplicate checks', () => {
