@@ -22,6 +22,7 @@ export type CreateRequestPayload = {
   lat?: number | null;
   lng?: number | null;
   address?: string | null;
+  serviceCity?: string | null;
   scheduledAt?: string;
   paymentMethod: PaymentMethod;
   images?: { uri: string; name?: string; type?: string }[];

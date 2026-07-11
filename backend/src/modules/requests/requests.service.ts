@@ -9,6 +9,7 @@ import {
   addOfferMetaToRequests,
   buildIncomingRequestWhereForWorker,
   notifyEligibleWorkersForRequest,
+  workerMatchesServiceArea,
   workerMatchesSchedule,
 } from './requestMatching.service';
 import {
@@ -111,13 +112,27 @@ function coordinateBucket(lat: number, lng: number) {
   return `COORD:${roundedLat.toFixed(COORDINATE_BUCKET_PRECISION)},${roundedLng.toFixed(COORDINATE_BUCKET_PRECISION)}`;
 }
 
-export function buildRequestLocationBucket(input: { address?: string | null; lat?: number | null; lng?: number | null }) {
+export function buildRequestLocationBucket(input: { address?: string | null; serviceCity?: string | null; lat?: number | null; lng?: number | null }) {
   const normalizedAddress = normalizeRequestAddress(input.address);
   if (normalizedAddress) return `ADDR:${normalizedAddress}`;
+  const normalizedCity = normalizeRequestText(input.serviceCity);
+  if (normalizedCity) return `CITY:${normalizedCity}`;
   if (input.lat != null && input.lng != null && !(input.lat === 0 && input.lng === 0)) {
     return coordinateBucket(input.lat, input.lng);
   }
   return 'NO_LOCATION';
+}
+
+export function deriveServiceCity(input: { serviceCity?: string | null; address?: string | null }) {
+  const explicitCity = normalizeRequestText(input.serviceCity);
+  if (explicitCity) return explicitCity;
+
+  const address = input.address?.trim();
+  if (!address) return null;
+  const parts = address.split(',').map(part => part.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+
+  return normalizeRequestText(parts[parts.length - 1]);
 }
 
 export function buildActiveJobKey(input: {
@@ -126,6 +141,7 @@ export function buildActiveJobKey(input: {
   title: string;
   description: string;
   address?: string | null;
+  serviceCity?: string | null;
   lat?: number | null;
   lng?: number | null;
 }) {
@@ -223,6 +239,7 @@ export async function createRequest(
     lat?: number | null;
     lng?: number | null;
     address?: string | null;
+    serviceCity?: string | null;
     scheduledAt?: string;
     paymentMethod: 'ONLINE' | 'CASH';
   },
@@ -263,6 +280,7 @@ export async function createRequest(
         lat: body.lat ?? null,
         lng: body.lng ?? null,
         address: body.address?.trim() || null,
+        serviceCity: deriveServiceCity(body),
         activeJobKey,
         scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : undefined,
         paymentMethod: body.paymentMethod,
@@ -286,6 +304,10 @@ export async function createRequest(
     categoryId: body.categoryId,
     title: request.title,
     scheduledAt: request.scheduledAt,
+    lat: request.lat,
+    lng: request.lng,
+    address: request.address,
+    serviceCity: request.serviceCity,
     category: request.category,
   }).catch(() => {});
 
@@ -304,7 +326,15 @@ export async function listRequests(
 
   let where: Prisma.ServiceRequestWhereInput;
   let workerIdForOfferState: string | null = null;
-  let workerForViewer: { id: string; availability: { dayOfWeek: number; startTime: string; endTime: string }[] } | null = null;
+  let workerForViewer: {
+    id: string;
+    availability: { dayOfWeek: number; startTime: string; endTime: string }[];
+    primaryServiceCity: string | null;
+    additionalServiceCities: string[];
+    serviceRadiusKm: number | null;
+    baseLatitude: number | null;
+    baseLongitude: number | null;
+  } | null = null;
 
   if (role === 'CUSTOMER') {
     where = { customerId: userId, ...(status && { status }) };
@@ -314,6 +344,11 @@ export async function listRequests(
       select: {
         id: true,
         availability: { select: { dayOfWeek: true, startTime: true, endTime: true } },
+        primaryServiceCity: true,
+        additionalServiceCities: true,
+        serviceRadiusKm: true,
+        baseLatitude: true,
+        baseLongitude: true,
       },
     });
 
@@ -346,7 +381,10 @@ export async function listRequests(
         select: requestSelect,
         orderBy: { createdAt: 'desc' },
       });
-      const scheduledCandidates = candidates.filter(item => workerMatchesSchedule(worker, item.scheduledAt));
+      const scheduledCandidates = candidates.filter(item =>
+        workerMatchesSchedule(worker, item.scheduledAt) &&
+        workerMatchesServiceArea(worker, item),
+      );
       const itemsWithOfferMeta = await addOfferMetaToRequests(db, scheduledCandidates);
       const itemsWithViewerOfferState = await addWorkerOfferState(itemsWithOfferMeta, workerIdForOfferState);
       const filteredItems = itemsWithViewerOfferState.filter(item => {
@@ -388,6 +426,7 @@ export async function listRequests(
     ? itemsWithViewerOfferState.filter(item => {
       if (item.status !== 'PENDING' || item.worker) return true;
       if ('hasMyOffer' in item && item.hasMyOffer) return true;
+      if (workerForViewer && !workerMatchesServiceArea(workerForViewer, item)) return false;
       return item.offerCount < item.maxOffers;
     })
     : itemsWithViewerOfferState;
@@ -417,6 +456,11 @@ export async function getRequest(id: string, userId: string, role: string) {
       select: {
         id: true,
         availability: { select: { dayOfWeek: true, startTime: true, endTime: true } },
+        primaryServiceCity: true,
+        additionalServiceCities: true,
+        serviceRadiusKm: true,
+        baseLatitude: true,
+        baseLongitude: true,
       },
     });
     if (!worker) throw { status: 404, message: 'Worker profile not found' };
@@ -435,7 +479,9 @@ export async function getRequest(id: string, userId: string, role: string) {
           where: { AND: [{ id }, incomingWhere] },
           select: { id: true },
         });
-        isOpenIncomingRequest = Boolean(eligibleRequest) && workerMatchesSchedule(worker, request.scheduledAt);
+        isOpenIncomingRequest = Boolean(eligibleRequest)
+          && workerMatchesSchedule(worker, request.scheduledAt)
+          && workerMatchesServiceArea(worker, request);
       }
     }
 

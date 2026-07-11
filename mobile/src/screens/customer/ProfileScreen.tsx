@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LanguageSelector } from '@/components/language/LanguageSelector';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/i18n';
@@ -13,10 +15,14 @@ import {
 import { colors, spacing } from '@/theme';
 import { localizedApiErrorMessage } from '@/utils/localizedErrors';
 import { queryKeys } from '@/utils/queryKeys';
+import { RootStackParamList } from '@/types';
+
+type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function ProfileScreen() {
   const { t } = useLanguage();
   const { user, logout } = useAuth();
+  const navigation = useNavigation<Nav>();
   const setUser = useAuthStore(s => s.setUser);
   const queryClient = useQueryClient();
 
@@ -111,6 +117,14 @@ export default function ProfileScreen() {
         ) : (
           <BodySm color={colors.textSecondary}>{t('profile.changePasswordHint')}</BodySm>
         )}
+      </Card>
+
+      <Card style={{ marginTop: spacing.md }}>
+        <Stack gap={spacing.sm}>
+          <H3>{t('support.title')}</H3>
+          <Body color={colors.textSecondary}>{t('support.profileEntry')}</Body>
+          <Button title={t('support.open')} variant="outline" onPress={() => navigation.navigate('Support')} />
+        </Stack>
       </Card>
 
       {/* Logout */}

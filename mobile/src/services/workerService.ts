@@ -10,6 +10,11 @@ export type UpdateWorkerProfilePayload = {
   hourlyRate?: number | null;
   fixedPrice?: number | null;
   workingRadius?: number;
+  primaryServiceCity?: string | null;
+  additionalServiceCities?: string[];
+  serviceRadiusKm?: number | null;
+  baseLatitude?: number | null;
+  baseLongitude?: number | null;
 };
 export const workerService = {
   getOne: (id: string) => api.get(`/workers/${id}`).then(unwrap<WorkerProfile>),

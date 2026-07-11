@@ -38,11 +38,11 @@ type Draft = {
   yearsExp?: string;
   hourlyRate?: string;
   categoryIds?: string[];
-  city?: string;
-  serviceArea?: string;
-  workingRadius?: string;
-  lat?: string;
-  lng?: string;
+  primaryServiceCity?: string;
+  additionalServiceCities?: string;
+  serviceRadiusKm?: string;
+  baseLatitude?: string;
+  baseLongitude?: string;
   isAvailable?: boolean;
   days?: number[];
   startTime?: string;
@@ -116,11 +116,11 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
   const [yearsExp, setYearsExp] = useState(initialWorker?.yearsExp != null ? String(initialWorker.yearsExp) : '');
   const [hourlyRate, setHourlyRate] = useState(initialWorker?.hourlyRate != null ? String(initialWorker.hourlyRate) : '');
   const [categoryIds, setCategoryIds] = useState<string[]>(() => workerCategoryIds(initialWorker));
-  const [city, setCity] = useState('');
-  const [serviceArea, setServiceArea] = useState('');
-  const [workingRadius, setWorkingRadius] = useState(initialWorker?.workingRadius != null ? String(initialWorker.workingRadius) : '20');
-  const [lat, setLat] = useState('');
-  const [lng, setLng] = useState('');
+  const [primaryServiceCity, setPrimaryServiceCity] = useState(initialWorker?.primaryServiceCity ?? '');
+  const [additionalServiceCities, setAdditionalServiceCities] = useState((initialWorker?.additionalServiceCities ?? []).join(', '));
+  const [serviceRadiusKm, setServiceRadiusKm] = useState(initialWorker?.serviceRadiusKm != null ? String(initialWorker.serviceRadiusKm) : '');
+  const [baseLatitude, setBaseLatitude] = useState(initialWorker?.baseLatitude != null ? String(initialWorker.baseLatitude) : '');
+  const [baseLongitude, setBaseLongitude] = useState(initialWorker?.baseLongitude != null ? String(initialWorker.baseLongitude) : '');
   const [isAvailable, setIsAvailable] = useState(initialWorker?.isAvailable ?? true);
   const [days, setDays] = useState<number[]>(initialWorker?.availability?.map(slot => slot.dayOfWeek) ?? [0, 1, 2, 3, 4]);
   const [startTime, setStartTime] = useState(initialWorker?.availability?.[0]?.startTime ?? '09:00');
@@ -147,11 +147,11 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
         setYearsExp(draft.yearsExp ?? yearsExp);
         setHourlyRate(draft.hourlyRate ?? hourlyRate);
         setCategoryIds(draft.categoryIds ?? categoryIds);
-        setCity(draft.city ?? '');
-        setServiceArea(draft.serviceArea ?? '');
-        setWorkingRadius(draft.workingRadius ?? workingRadius);
-        setLat(draft.lat ?? '');
-        setLng(draft.lng ?? '');
+        setPrimaryServiceCity(draft.primaryServiceCity ?? '');
+        setAdditionalServiceCities(draft.additionalServiceCities ?? '');
+        setServiceRadiusKm(draft.serviceRadiusKm ?? serviceRadiusKm);
+        setBaseLatitude(draft.baseLatitude ?? '');
+        setBaseLongitude(draft.baseLongitude ?? '');
         setIsAvailable(draft.isAvailable ?? isAvailable);
         setDays(draft.days ?? days);
         setStartTime(draft.startTime ?? startTime);
@@ -179,11 +179,11 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
     yearsExp,
     hourlyRate,
     categoryIds,
-    city,
-    serviceArea,
-    workingRadius,
-    lat,
-    lng,
+    primaryServiceCity,
+    additionalServiceCities,
+    serviceRadiusKm,
+    baseLatitude,
+    baseLongitude,
     isAvailable,
     days,
     startTime,
@@ -191,7 +191,7 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
     portfolioPlaceholders,
     verificationReady,
     certificateNote,
-  }), [avatarUrl, bio, categoryIds, certificateNote, city, days, endTime, fullName, hourlyRate, isAvailable, lat, lng, phone, portfolioPlaceholders, serviceArea, startTime, verificationReady, workingRadius, yearsExp]);
+  }), [additionalServiceCities, avatarUrl, baseLatitude, baseLongitude, bio, categoryIds, certificateNote, days, endTime, fullName, hourlyRate, isAvailable, phone, portfolioPlaceholders, primaryServiceCity, serviceRadiusKm, startTime, verificationReady, yearsExp]);
 
   useEffect(() => {
     if (!draftLoaded || success) return;
@@ -215,11 +215,16 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
   }, [avatarUrl, bio, fullName, hourlyRate, phone, t, yearsExp]);
 
   const locationErrors = useMemo(() => {
-    const radius = Number(workingRadius);
+    const radius = serviceRadiusKm.trim() ? Number(serviceRadiusKm) : null;
+    const latitude = baseLatitude.trim() ? Number(baseLatitude) : null;
+    const longitude = baseLongitude.trim() ? Number(baseLongitude) : null;
     const errors: string[] = [];
-    if (!Number.isFinite(radius) || radius < 1 || radius > 200) errors.push(t('validation.serviceRadius'));
+    if (primaryServiceCity.trim().length < 2) errors.push(t('validation.serviceCityRequired'));
+    if (radius != null && (!Number.isFinite(radius) || radius < 1 || radius > 100)) errors.push(t('validation.serviceRadius'));
+    if ((latitude == null) !== (longitude == null)) errors.push(t('validation.baseLocationPair'));
+    if (radius != null && (latitude == null || longitude == null)) errors.push(t('validation.radiusNeedsBaseLocation'));
     return errors;
-  }, [t, workingRadius]);
+  }, [baseLatitude, baseLongitude, primaryServiceCity, serviceRadiusKm, t]);
 
   const availabilityErrors = useMemo(() => {
     const errors: string[] = [];
@@ -256,8 +261,9 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
       }
 
       const position = await Location.getCurrentPositionAsync({});
-      setLat(position.coords.latitude.toFixed(6));
-      setLng(position.coords.longitude.toFixed(6));
+      setBaseLatitude(position.coords.latitude.toFixed(6));
+      setBaseLongitude(position.coords.longitude.toFixed(6));
+      if (!serviceRadiusKm.trim()) setServiceRadiusKm('20');
     } catch (err) {
       setError(err instanceof Error ? err.message : t('map.currentError'));
     } finally {
@@ -309,13 +315,17 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
         bio: bio.trim(),
         yearsExp: Number.parseInt(yearsExp, 10),
         hourlyRate: Number(hourlyRate),
-        workingRadius: Number.parseInt(workingRadius, 10),
+        primaryServiceCity: primaryServiceCity.trim() || null,
+        additionalServiceCities: additionalServiceCities.split(',').map(city => city.trim()).filter(Boolean),
+        serviceRadiusKm: serviceRadiusKm.trim() ? Number.parseInt(serviceRadiusKm, 10) : null,
+        baseLatitude: baseLatitude.trim() ? Number(baseLatitude) : null,
+        baseLongitude: baseLongitude.trim() ? Number(baseLongitude) : null,
       });
 
       await workerService.setCategories(categoryIds);
       await workerService.setAvailability(days.map(dayOfWeek => ({ dayOfWeek, startTime, endTime })));
       await workerService.toggleAvailability(isAvailable);
-      await AsyncStorage.setItem(`${draftKey}_local_details`, JSON.stringify({ city, serviceArea, lat, lng, portfolioPlaceholders, verificationReady, certificateNote }));
+      await AsyncStorage.setItem(`${draftKey}_local_details`, JSON.stringify({ portfolioPlaceholders, verificationReady, certificateNote }));
       await AsyncStorage.removeItem(draftKey);
 
       setUser(updatedUser);
@@ -401,12 +411,12 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
         {step === 3 ? (
           <View style={styles.step}>
             <Text style={[styles.stepTitle, isRTL && styles.rtlText]}>{t('worker.onboarding.serviceRadius')}</Text>
-            <AuthBanner tone="info" title={t('worker.onboarding.backendLimitation')} message={t('worker.onboarding.locationLimitation')} />
-            <AuthInput label={t('worker.onboarding.city')} value={city} onChangeText={setCity} placeholder={t('worker.onboarding.cityPlaceholder')} leftIcon="business-outline" />
-            <AuthInput label={t('worker.onboarding.serviceArea')} value={serviceArea} onChangeText={setServiceArea} placeholder={t('worker.onboarding.serviceAreaPlaceholder')} leftIcon="map-outline" />
-            <AuthInput label={t('worker.onboarding.workingRadius')} value={workingRadius} onChangeText={setWorkingRadius} placeholder="20" keyboardType="numeric" leftIcon="navigate-outline" />
-            <AuthButton title={lat && lng ? t('worker.onboarding.updateCurrentLocation') : t('worker.onboarding.useCurrentLocation')} variant="secondary" icon="location-outline" loading={locationLoading} onPress={handleCurrentLocation} />
-            {lat && lng ? <Text style={[styles.note, isRTL && styles.rtlText]}>{t('worker.onboarding.savedLocally', { lat, lng })}</Text> : null}
+            <AuthBanner tone="info" title={t('worker.onboarding.serviceAreaSavedTitle')} message={t('worker.onboarding.locationLimitation')} />
+            <AuthInput label={t('worker.onboarding.city')} value={primaryServiceCity} onChangeText={setPrimaryServiceCity} placeholder={t('worker.onboarding.cityPlaceholder')} leftIcon="business-outline" />
+            <AuthInput label={t('worker.onboarding.additionalCities')} value={additionalServiceCities} onChangeText={setAdditionalServiceCities} placeholder={t('worker.onboarding.additionalCitiesPlaceholder')} leftIcon="map-outline" />
+            <AuthInput label={t('worker.onboarding.workingRadius')} value={serviceRadiusKm} onChangeText={setServiceRadiusKm} placeholder="20" keyboardType="numeric" leftIcon="navigate-outline" />
+            <AuthButton title={baseLatitude && baseLongitude ? t('worker.onboarding.updateCurrentLocation') : t('worker.onboarding.useCurrentLocation')} variant="secondary" icon="location-outline" loading={locationLoading} onPress={handleCurrentLocation} />
+            {baseLatitude && baseLongitude ? <Text style={[styles.note, isRTL && styles.rtlText]}>{t('worker.onboarding.baseLocationSaved', { lat: baseLatitude, lng: baseLongitude })}</Text> : null}
           </View>
         ) : null}
 

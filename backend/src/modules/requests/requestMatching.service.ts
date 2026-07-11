@@ -16,6 +16,10 @@ type MatchRequest = {
   customerId: string;
   categoryId: string;
   title?: string;
+  lat?: number | null;
+  lng?: number | null;
+  address?: string | null;
+  serviceCity?: string | null;
   scheduledAt?: Date | string | null;
   category?: { name?: string | null } | null;
 };
@@ -26,6 +30,11 @@ const eligibleWorkerSelect = {
   bio: true,
   yearsExp: true,
   hourlyRate: true,
+  primaryServiceCity: true,
+  additionalServiceCities: true,
+  serviceRadiusKm: true,
+  baseLatitude: true,
+  baseLongitude: true,
   approvedAt: true,
   isAvailable: true,
   user: { select: { id: true, role: true, isActive: true, fullName: true, phone: true, avatarUrl: true } },
@@ -55,6 +64,68 @@ export function workerMatchesSchedule(worker: Pick<EligibleWorker, 'availability
   const scheduled = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
   if (Number.isNaN(scheduled.getTime())) return true;
   return worker.availability.some(slot => slot.dayOfWeek === scheduled.getDay());
+}
+
+function normalizeCity(value?: string | null) {
+  return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function cityFromAddress(address?: string | null) {
+  const parts = (address ?? '').split(',').map(part => part.trim()).filter(Boolean);
+  return parts.length > 1 ? normalizeCity(parts[parts.length - 1]) : '';
+}
+
+function toRadians(value: number) {
+  return value * Math.PI / 180;
+}
+
+export function distanceKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const earthRadiusKm = 6371;
+  const dLat = toRadians(b.lat - a.lat);
+  const dLng = toRadians(b.lng - a.lng);
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * earthRadiusKm * Math.asin(Math.sqrt(h));
+}
+
+function hasWorkerRadius(worker: Pick<EligibleWorker, 'baseLatitude' | 'baseLongitude' | 'serviceRadiusKm'>) {
+  return worker.baseLatitude != null && worker.baseLongitude != null && worker.serviceRadiusKm != null;
+}
+
+function hasWorkerCityArea(worker: Pick<EligibleWorker, 'primaryServiceCity' | 'additionalServiceCities'>) {
+  return Boolean(normalizeCity(worker.primaryServiceCity)) || worker.additionalServiceCities.length > 0;
+}
+
+export function workerMatchesServiceArea(
+  worker: Pick<EligibleWorker, 'primaryServiceCity' | 'additionalServiceCities' | 'serviceRadiusKm' | 'baseLatitude' | 'baseLongitude'>,
+  request: Pick<MatchRequest, 'lat' | 'lng' | 'address' | 'serviceCity'>,
+) {
+  const hasRequestCoordinates = request.lat != null && request.lng != null && !(request.lat === 0 && request.lng === 0);
+  const requestCity = normalizeCity(request.serviceCity) || cityFromAddress(request.address);
+
+  if (!hasRequestCoordinates && !requestCity) return true;
+
+  if (hasRequestCoordinates && hasWorkerRadius(worker)) {
+    return distanceKm(
+      { lat: request.lat!, lng: request.lng! },
+      { lat: worker.baseLatitude!, lng: worker.baseLongitude! },
+    ) <= worker.serviceRadiusKm!;
+  }
+
+  if (requestCity) {
+    const workerCities = [
+      normalizeCity(worker.primaryServiceCity),
+      ...worker.additionalServiceCities.map(normalizeCity),
+    ].filter(Boolean);
+    if (workerCities.length > 0) return workerCities.includes(requestCity);
+  }
+
+  // TODO before public launch: make service-area configuration mandatory for
+  // located requests. This keeps existing development workers visible for now.
+  return !hasWorkerRadius(worker) && !hasWorkerCityArea(worker);
 }
 
 const PHONE_REGEX = /^(\+?[1-9]\d{7,14}|0\d{8,14})$/;
@@ -100,6 +171,9 @@ function assertBasicWorkerEligibility(worker: EligibleWorker | null, request: Ma
   }
   if (!workerMatchesSchedule(worker, request.scheduledAt)) {
     throw apiError(403, 'WORKER_UNAVAILABLE', 'Worker is not available for the requested time');
+  }
+  if (!workerMatchesServiceArea(worker, request)) {
+    throw apiError(403, 'WORKER_OUTSIDE_SERVICE_AREA', 'Worker does not serve this request location');
   }
 }
 
@@ -150,6 +224,7 @@ export async function findEligibleWorkersForRequest(
   for (const worker of workers) {
     if (!canWorkerReceiveIncomingRequests(worker)) continue;
     if (!workerMatchesSchedule(worker, request.scheduledAt)) continue;
+    if (!workerMatchesServiceArea(worker, request)) continue;
     eligible.push({ worker });
   }
 

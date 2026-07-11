@@ -7,8 +7,30 @@ import {
   buildIncomingRequestWhereFromWorker,
   assertWorkerCanSubmitOffer,
   isWorkerProfileCompleteForMatching,
+  workerMatchesServiceArea,
   type EligibleWorker,
 } from './requestMatching.service';
+
+function baseWorker(overrides: Partial<EligibleWorker> = {}) {
+  return {
+    id: 'worker-1',
+    userId: 'worker-user-1',
+    bio: 'Experienced electrical worker for home repairs.',
+    yearsExp: 3,
+    hourlyRate: new Prisma.Decimal(120),
+    user: { id: 'worker-user-1', role: 'WORKER', isActive: true, fullName: 'Test Worker', phone: '0501234567', avatarUrl: 'https://example.com/avatar.jpg' },
+    approvedAt: new Date(),
+    isAvailable: true,
+    primaryServiceCity: null,
+    additionalServiceCities: [],
+    serviceRadiusKm: null,
+    baseLatitude: null,
+    baseLongitude: null,
+    categories: [{ categoryId: 'electrical' }],
+    availability: [],
+    ...overrides,
+  } as EligibleWorker;
+}
 
 test('active offer statuses are exactly submitted and discussing', () => {
   assert.deepEqual([...ACTIVE_OFFER_STATUSES].sort(), ['DISCUSSING', 'SUBMITTED']);
@@ -66,18 +88,7 @@ test('worker with an active subscription can create an offer after free quota is
 });
 
 test('incoming request visibility can still be built for exhausted workers', () => {
-  const worker = {
-    id: 'worker-1',
-    userId: 'worker-user-1',
-    bio: 'Experienced electrical worker for home repairs.',
-    yearsExp: 3,
-    hourlyRate: new Prisma.Decimal(120),
-    user: { id: 'worker-user-1', role: 'WORKER', isActive: true, fullName: 'Test Worker', phone: '0501234567', avatarUrl: 'https://example.com/avatar.jpg' },
-    approvedAt: new Date(),
-    isAvailable: true,
-    categories: [{ categoryId: 'electrical' }],
-    availability: [],
-  } as EligibleWorker;
+  const worker = baseWorker();
 
   assert.deepEqual(buildIncomingRequestWhereFromWorker(worker, 'worker-user-1'), {
     status: 'PENDING',
@@ -88,18 +99,10 @@ test('incoming request visibility can still be built for exhausted workers', () 
 });
 
 test('complete onboarded worker can see incoming requests before manual approval', () => {
-  const worker = {
-    id: 'worker-1',
-    userId: 'worker-user-1',
-    bio: 'Experienced electrical worker for home repairs.',
-    yearsExp: 3,
-    hourlyRate: new Prisma.Decimal(120),
-    user: { id: 'worker-user-1', role: 'WORKER', isActive: true, fullName: 'Test Worker', phone: '0501234567', avatarUrl: 'https://example.com/avatar.jpg' },
+  const worker = baseWorker({
     approvedAt: null,
-    isAvailable: true,
-    categories: [{ categoryId: 'electrical' }],
     availability: [{ dayOfWeek: 0, startTime: '09:00', endTime: '18:00' }],
-  } as EligibleWorker;
+  });
 
   assert.equal(isWorkerProfileCompleteForMatching(worker), true);
   assert.deepEqual(buildIncomingRequestWhereFromWorker(worker, 'worker-user-1'), {
@@ -111,36 +114,24 @@ test('complete onboarded worker can see incoming requests before manual approval
 });
 
 test('incomplete unapproved worker cannot see incoming requests', () => {
-  const worker = {
-    id: 'worker-1',
-    userId: 'worker-user-1',
+  const worker = baseWorker({
     bio: null,
     yearsExp: 0,
     hourlyRate: null,
     user: { id: 'worker-user-1', role: 'WORKER', isActive: true, fullName: 'Test Worker', phone: '0501234567', avatarUrl: null },
     approvedAt: null,
-    isAvailable: true,
-    categories: [{ categoryId: 'electrical' }],
     availability: [],
-  } as EligibleWorker;
+  });
 
   assert.equal(isWorkerProfileCompleteForMatching(worker), false);
   assert.equal(buildIncomingRequestWhereFromWorker(worker, 'worker-user-1'), null);
 });
 
 test('unrelated-category workers are excluded by the incoming category filter', () => {
-  const worker = {
-    id: 'worker-1',
-    userId: 'worker-user-1',
+  const worker = baseWorker({
     bio: 'Experienced plumbing worker for home repairs.',
-    yearsExp: 3,
-    hourlyRate: new Prisma.Decimal(120),
-    user: { id: 'worker-user-1', role: 'WORKER', isActive: true, fullName: 'Test Worker', phone: '0501234567', avatarUrl: 'https://example.com/avatar.jpg' },
-    approvedAt: new Date(),
-    isAvailable: true,
     categories: [{ categoryId: 'plumbing' }],
-    availability: [],
-  } as EligibleWorker;
+  });
 
   const where = buildIncomingRequestWhereFromWorker(worker, 'worker-user-1');
   const categoryFilter = where?.categoryId as { in?: string[] };
@@ -149,18 +140,7 @@ test('unrelated-category workers are excluded by the incoming category filter', 
 });
 
 test('incoming request visibility does not require request location fields', () => {
-  const worker = {
-    id: 'worker-1',
-    userId: 'worker-user-1',
-    bio: 'Experienced electrical worker for home repairs.',
-    yearsExp: 3,
-    hourlyRate: new Prisma.Decimal(120),
-    user: { id: 'worker-user-1', role: 'WORKER', isActive: true, fullName: 'Test Worker', phone: '0501234567', avatarUrl: 'https://example.com/avatar.jpg' },
-    approvedAt: new Date(),
-    isAvailable: true,
-    categories: [{ categoryId: 'electrical' }],
-    availability: [],
-  } as EligibleWorker;
+  const worker = baseWorker();
 
   const where = buildIncomingRequestWhereFromWorker(worker, 'worker-user-1');
 
@@ -173,4 +153,44 @@ test('incoming request visibility does not require request location fields', () 
     customerId: { not: 'worker-user-1' },
     categoryId: { in: ['electrical'] },
   });
+});
+
+test('no-location request matches category worker by service area', () => {
+  assert.equal(workerMatchesServiceArea(baseWorker({ primaryServiceCity: 'Haifa' }), {}), true);
+});
+
+test('city request matches worker primary city', () => {
+  assert.equal(workerMatchesServiceArea(baseWorker({ primaryServiceCity: 'Haifa' }), { serviceCity: ' haifa ' }), true);
+});
+
+test('city request matches worker additional city', () => {
+  assert.equal(workerMatchesServiceArea(baseWorker({ additionalServiceCities: ['Acre', 'Karmiel'] }), { serviceCity: 'karmiel' }), true);
+});
+
+test('city request does not match different configured city', () => {
+  assert.equal(workerMatchesServiceArea(baseWorker({ primaryServiceCity: 'Haifa' }), { serviceCity: 'Tel Aviv' }), false);
+});
+
+test('coordinate request matches worker within radius', () => {
+  const worker = baseWorker({ baseLatitude: 32.794, baseLongitude: 34.9896, serviceRadiusKm: 25 });
+  assert.equal(workerMatchesServiceArea(worker, { lat: 32.800, lng: 34.990 }), true);
+});
+
+test('coordinate request does not match worker outside radius', () => {
+  const worker = baseWorker({ baseLatitude: 32.794, baseLongitude: 34.9896, serviceRadiusKm: 10 });
+  assert.equal(workerMatchesServiceArea(worker, { lat: 31.7683, lng: 35.2137 }), false);
+});
+
+test('coordinate request falls back for worker without service area during MVP', () => {
+  assert.equal(workerMatchesServiceArea(baseWorker(), { lat: 31.7683, lng: 35.2137 }), true);
+});
+
+test('request with city and coordinates prefers radius when available', () => {
+  const worker = baseWorker({
+    primaryServiceCity: 'Jerusalem',
+    baseLatitude: 32.794,
+    baseLongitude: 34.9896,
+    serviceRadiusKm: 10,
+  });
+  assert.equal(workerMatchesServiceArea(worker, { serviceCity: 'Jerusalem', lat: 31.7683, lng: 35.2137 }), false);
 });

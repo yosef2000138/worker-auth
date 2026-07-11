@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet } from 'react-native';
+import * as Location from 'expo-location';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -46,6 +47,12 @@ export default function WorkerOwnProfileScreen() {
   const [bio, setBio] = useState('');
   const [hourlyRate, setHourlyRate] = useState('');
   const [yearsExp, setYearsExp] = useState('');
+  const [primaryServiceCity, setPrimaryServiceCity] = useState('');
+  const [additionalServiceCities, setAdditionalServiceCities] = useState('');
+  const [serviceRadiusKm, setServiceRadiusKm] = useState('');
+  const [baseLatitude, setBaseLatitude] = useState('');
+  const [baseLongitude, setBaseLongitude] = useState('');
+  const [locationLoading, setLocationLoading] = useState(false);
   const [workerEditMode, setWorkerEditMode] = useState(false);
   const [personalEditMode, setPersonalEditMode] = useState(false);
 
@@ -54,6 +61,11 @@ export default function WorkerOwnProfileScreen() {
       setBio(worker.bio ?? '');
       setHourlyRate(worker.hourlyRate != null ? String(worker.hourlyRate) : '');
       setYearsExp(worker.yearsExp != null ? String(worker.yearsExp) : '');
+      setPrimaryServiceCity(worker.primaryServiceCity ?? '');
+      setAdditionalServiceCities((worker.additionalServiceCities ?? []).join(', '));
+      setServiceRadiusKm(worker.serviceRadiusKm != null ? String(worker.serviceRadiusKm) : '');
+      setBaseLatitude(worker.baseLatitude != null ? String(worker.baseLatitude) : '');
+      setBaseLongitude(worker.baseLongitude != null ? String(worker.baseLongitude) : '');
     }
   }, [worker]);
 
@@ -61,6 +73,13 @@ export default function WorkerOwnProfileScreen() {
     mutationFn: () => {
       const nextRate = hourlyRate.trim() ? Number(hourlyRate) : null;
       const nextYears = yearsExp.trim() ? Number.parseInt(yearsExp, 10) : undefined;
+      const nextRadius = serviceRadiusKm.trim() ? Number.parseInt(serviceRadiusKm, 10) : null;
+      const nextLatitude = baseLatitude.trim() ? Number(baseLatitude) : null;
+      const nextLongitude = baseLongitude.trim() ? Number(baseLongitude) : null;
+      const nextAdditionalCities = additionalServiceCities
+        .split(',')
+        .map(city => city.trim())
+        .filter(Boolean);
 
       if (nextRate != null && (!Number.isFinite(nextRate) || nextRate <= 0)) {
         throw new Error(t('validation.hourlyRatePositive'));
@@ -68,11 +87,25 @@ export default function WorkerOwnProfileScreen() {
       if (nextYears != null && (!Number.isFinite(nextYears) || nextYears < 0)) {
         throw new Error(t('validation.experienceRange'));
       }
+      if (nextRadius != null && (!Number.isFinite(nextRadius) || nextRadius < 1 || nextRadius > 100)) {
+        throw new Error(t('validation.serviceRadius'));
+      }
+      if ((nextLatitude == null) !== (nextLongitude == null)) {
+        throw new Error(t('validation.baseLocationPair'));
+      }
+      if (nextRadius != null && (nextLatitude == null || nextLongitude == null)) {
+        throw new Error(t('validation.radiusNeedsBaseLocation'));
+      }
 
       return workerService.updateMe({
         bio: bio.trim() || null,
         hourlyRate: nextRate,
         yearsExp: nextYears,
+        primaryServiceCity: primaryServiceCity.trim() || null,
+        additionalServiceCities: nextAdditionalCities,
+        serviceRadiusKm: nextRadius,
+        baseLatitude: nextLatitude,
+        baseLongitude: nextLongitude,
       });
     },
     onSuccess: () => {
@@ -112,6 +145,26 @@ export default function WorkerOwnProfileScreen() {
         },
       },
     ]);
+  };
+
+  const handleUseCurrentLocation = async () => {
+    setLocationLoading(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert(t('map.currentUnavailable'));
+        return;
+      }
+
+      const position = await Location.getCurrentPositionAsync({});
+      setBaseLatitude(position.coords.latitude.toFixed(6));
+      setBaseLongitude(position.coords.longitude.toFixed(6));
+      if (!serviceRadiusKm.trim()) setServiceRadiusKm('20');
+    } catch (err) {
+      Alert.alert(err instanceof Error ? err.message : t('map.currentError'));
+    } finally {
+      setLocationLoading(false);
+    }
   };
 
   if (isLoading) return <ScrollView style={{ padding: spacing.lg }}><ListSkeleton count={3} /></ScrollView>;
@@ -163,6 +216,22 @@ export default function WorkerOwnProfileScreen() {
             <Field label={t('profile.hourlyRate')} placeholder="80" value={hourlyRate} onChangeText={setHourlyRate} keyboardType="numeric" editable={workerEditMode} containerStyle={{ flex: 1 }} />
             <Field label={t('profile.experience')} placeholder="5" value={yearsExp} onChangeText={setYearsExp} keyboardType="numeric" editable={workerEditMode} containerStyle={{ flex: 1 }} />
           </Row>
+          <Stack gap={spacing.sm}>
+            <H3>{t('profile.serviceAreaTitle')}</H3>
+            <Field label={t('profile.primaryServiceCity')} placeholder={t('worker.onboarding.cityPlaceholder')} value={primaryServiceCity} onChangeText={setPrimaryServiceCity} editable={workerEditMode} />
+            <Field label={t('profile.additionalServiceCities')} placeholder={t('profile.additionalServiceCitiesPlaceholder')} value={additionalServiceCities} onChangeText={setAdditionalServiceCities} editable={workerEditMode} />
+            <Field label={t('profile.serviceRadiusKm')} placeholder="20" value={serviceRadiusKm} onChangeText={setServiceRadiusKm} keyboardType="numeric" editable={workerEditMode} />
+            <Row gap={spacing.md}>
+              <Field label={t('profile.baseLatitude')} value={baseLatitude} onChangeText={setBaseLatitude} keyboardType="decimal-pad" editable={workerEditMode} containerStyle={{ flex: 1 }} />
+              <Field label={t('profile.baseLongitude')} value={baseLongitude} onChangeText={setBaseLongitude} keyboardType="decimal-pad" editable={workerEditMode} containerStyle={{ flex: 1 }} />
+            </Row>
+            {workerEditMode ? (
+              <Button title={t('profile.useCurrentLocation')} variant="outline" loading={locationLoading} onPress={() => { void handleUseCurrentLocation(); }} />
+            ) : null}
+            {!worker?.primaryServiceCity && !worker?.serviceRadiusKm ? (
+              <Banner tone="warning" message={t('profile.serviceAreaMissing')} />
+            ) : null}
+          </Stack>
         </Stack>
         {workerEditMode ? <Button title={t('profile.saveWorker')} loading={saveProfile.isPending} style={{ marginTop: spacing.lg }} onPress={() => saveProfile.mutate()} /> : null}
       </Card>
@@ -194,6 +263,14 @@ export default function WorkerOwnProfileScreen() {
               : t('subscription.message.backendUnavailable')}
           </Body>
           <Button title={t('profile.openWorkerPro')} variant="outline" onPress={() => navigation.navigate('Subscription')} />
+        </Stack>
+      </Card>
+
+      <Card style={{ marginTop: spacing.md }}>
+        <Stack gap={spacing.sm}>
+          <H3>{t('support.title')}</H3>
+          <Body color={colors.textSecondary}>{t('support.profileEntry')}</Body>
+          <Button title={t('support.open')} variant="outline" onPress={() => navigation.navigate('Support')} />
         </Stack>
       </Card>
 

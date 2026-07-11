@@ -25,6 +25,7 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
   const [categoryId, setCategoryId] = useState(route.params?.categoryId ?? '');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [serviceCity, setServiceCity] = useState('');
   const [address, setAddress] = useState('');
   const [showManualAddress, setShowManualAddress] = useState(false);
   const [useCurrentCoords, setUseCurrentCoords] = useState(false);
@@ -51,6 +52,7 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
       categoryId,
       title: title.trim(),
       description: description.trim(),
+      serviceCity: serviceCity.trim() || undefined,
       address: address.trim() || undefined,
       lat: selectedLat,
       lng: selectedLng,
@@ -201,6 +203,15 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
                 <BodySm weight="bold">{t('requests.create.locationOptionalTitle')}</BodySm>
               </Row>
               <BodySm color={colors.textSecondary}>{t('requests.create.locationOptionalHelper')}</BodySm>
+              <Field
+                label={t('requests.create.serviceCity')}
+                placeholder={t('requests.create.serviceCityPlaceholder')}
+                value={serviceCity}
+                onChangeText={value => {
+                  setServiceCity(value);
+                  setSubmitError(null);
+                }}
+              />
 
               {showManualAddress ? (
                 <Field

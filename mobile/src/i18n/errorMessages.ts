@@ -24,6 +24,7 @@ export const apiErrorCodeTranslationKeys: Record<string, TranslationKey> = {
   REQUEST_NOT_PENDING: 'offers.errorRequestNotPending',
   WORKER_CATEGORY_MISMATCH: 'offers.errorCategoryMismatch',
   WORKER_NOT_ELIGIBLE: 'offers.errorWorkerNotEligible',
+  WORKER_SERVICE_AREA_MISMATCH: 'offers.errorOutsideServiceArea',
   WORKER_OUTSIDE_SERVICE_AREA: 'offers.errorOutsideServiceArea',
   WORKER_PROFILE_NOT_ACCESSIBLE: 'offers.errorProfileNotAccessible',
   WORKER_UNAVAILABLE: 'offers.errorWorkerUnavailable',

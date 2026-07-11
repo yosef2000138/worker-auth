@@ -131,6 +131,10 @@ export async function createOffer(requestId: string, userId: string, input: Crea
           categoryId: true,
           status: true,
           scheduledAt: true,
+          lat: true,
+          lng: true,
+          address: true,
+          serviceCity: true,
         },
       });
       if (!request) throw apiError(404, 'REQUEST_NOT_FOUND', 'Request not found');
@@ -324,6 +328,10 @@ export async function confirmOffer(requestId: string, offerId: string, customerI
         scheduledAt: true,
         status: true,
         workerId: true,
+        lat: true,
+        lng: true,
+        address: true,
+        serviceCity: true,
       },
     });
     if (!request) throw apiError(404, 'REQUEST_NOT_FOUND', 'Request not found');

@@ -12,6 +12,7 @@ import { useSocket } from '@/hooks/useSocket';
 import ChatScreen from '@/screens/customer/ChatScreen';
 import InAppMapScreen from '@/screens/shared/InAppMapScreen';
 import MessagesScreen from '@/screens/shared/MessagesScreen';
+import SupportScreen from '@/screens/shared/SupportScreen';
 import WorkerOnboardingScreen from '@/screens/worker/WorkerOnboardingScreen';
 import { requestService } from '@/services/requestService';
 import { workerService } from '@/services/workerService';
@@ -122,6 +123,7 @@ function AuthenticatedApp({ role }: { role?: string }) {
       <Stack.Screen name="Messages" component={MessagesScreen} options={{ title: t('nav.messages') }} />
       <Stack.Screen name="Chat" component={ChatScreen} options={{ title: t('nav.chat') }} />
       <Stack.Screen name="Map" component={InAppMapScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Support" component={SupportScreen} options={{ title: t('support.title') }} />
     </Stack.Navigator>
   );
 }

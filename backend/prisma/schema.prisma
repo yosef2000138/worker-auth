@@ -114,6 +114,11 @@ model Worker {
   totalReviews  Int       @default(0)
   totalJobs     Int       @default(0)
   workingRadius Int       @default(20)
+  primaryServiceCity      String?
+  additionalServiceCities String[]  @default([])
+  serviceRadiusKm         Int?
+  baseLatitude            Float?
+  baseLongitude           Float?
   approvedAt    DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -168,6 +173,7 @@ model ServiceRequest {
   lat           Float?
   lng           Float?
   address       String?
+  serviceCity   String?
   activeJobKey  String?       @unique
   scheduledAt   DateTime?
   priceAgreed   Decimal?      @db.Decimal(10, 2)

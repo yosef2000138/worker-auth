@@ -18,6 +18,11 @@ const workerSelect = {
   totalReviews: true,
   totalJobs: true,
   workingRadius: true,
+  primaryServiceCity: true,
+  additionalServiceCities: true,
+  serviceRadiusKm: true,
+  baseLatitude: true,
+  baseLongitude: true,
   approvedAt: true,
   createdAt: true,
   user: {
@@ -31,6 +36,27 @@ const workerSelect = {
     orderBy: { dayOfWeek: 'asc' as const },
   },
 } satisfies Prisma.WorkerSelect;
+
+export function normalizeServiceCity(value?: string | null) {
+  const normalized = (value ?? '').trim().replace(/\s+/g, ' ');
+  return normalized.length > 0 ? normalized : null;
+}
+
+export function normalizeAdditionalServiceCities(values?: string[] | null) {
+  const seen = new Set<string>();
+  const cities: string[] = [];
+
+  for (const value of values ?? []) {
+    const normalized = normalizeServiceCity(value);
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cities.push(normalized);
+  }
+
+  return cities.slice(0, 20);
+}
 
 async function ensureWorkerProfile(userId: string) {
   const existing = await db.worker.findUnique({
@@ -156,6 +182,11 @@ export async function updateWorkerProfile(userId: string, input: UpdateWorkerPro
       ...(input.hourlyRate !== undefined && { hourlyRate: input.hourlyRate }),
       ...(input.fixedPrice !== undefined && { fixedPrice: input.fixedPrice }),
       ...(input.workingRadius !== undefined && { workingRadius: input.workingRadius }),
+      ...(input.primaryServiceCity !== undefined && { primaryServiceCity: normalizeServiceCity(input.primaryServiceCity) }),
+      ...(input.additionalServiceCities !== undefined && { additionalServiceCities: normalizeAdditionalServiceCities(input.additionalServiceCities) }),
+      ...(input.serviceRadiusKm !== undefined && { serviceRadiusKm: input.serviceRadiusKm }),
+      ...(input.baseLatitude !== undefined && { baseLatitude: input.baseLatitude }),
+      ...(input.baseLongitude !== undefined && { baseLongitude: input.baseLongitude }),
     },
     select: workerSelect,
   });

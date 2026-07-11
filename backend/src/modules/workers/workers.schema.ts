@@ -1,5 +1,13 @@
 import { z } from 'zod';
 
+const emptyToUndefined = (value: unknown) => value === '' ? undefined : value;
+const serviceCitySchema = z.preprocess(
+  emptyToUndefined,
+  z.string().trim().min(1).max(100).optional().nullable(),
+);
+const coordinateSchema = (min: number, max: number) =>
+  z.preprocess(emptyToUndefined, z.coerce.number().min(min).max(max).optional().nullable());
+
 export const updateWorkerProfileSchema = z.object({
   body: z.object({
     bio: z.string().max(1000).trim().optional().nullable(),
@@ -7,7 +15,26 @@ export const updateWorkerProfileSchema = z.object({
     hourlyRate: z.number().positive().optional().nullable(),
     fixedPrice: z.number().positive().optional().nullable(),
     workingRadius: z.number().int().min(1).max(200).optional(),
-  }),
+    primaryServiceCity: serviceCitySchema,
+    additionalServiceCities: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
+    serviceRadiusKm: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(100).optional().nullable()),
+    baseLatitude: coordinateSchema(-90, 90),
+    baseLongitude: coordinateSchema(-180, 180),
+  })
+    .refine(
+      data => (data.baseLatitude == null && data.baseLongitude == null) || (data.baseLatitude != null && data.baseLongitude != null),
+      {
+        message: 'Base latitude and longitude must be provided together',
+        path: ['baseLatitude'],
+      },
+    )
+    .refine(
+      data => data.serviceRadiusKm == null || (data.baseLatitude != null && data.baseLongitude != null),
+      {
+        message: 'Base location is required when service radius is set',
+        path: ['serviceRadiusKm'],
+      },
+    ),
 });
 
 export const setCategoriesSchema = z.object({

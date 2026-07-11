@@ -27,6 +27,7 @@ export function isWorkerProfileComplete(worker?: WorkerProfile | null) {
     Number.isFinite(hourlyRate) &&
     hourlyRate > 0 &&
     workerCategoryIds(worker).length > 0 &&
+    Boolean(worker.primaryServiceCity?.trim()) &&
     (worker.availability?.length ?? 0) > 0
   );
 }
@@ -40,6 +41,7 @@ export function workerProfileMissingItems(worker?: WorkerProfile | null) {
     'profile.missing.bio': 'Short bio',
     'profile.missing.hourlyRate': 'Hourly rate',
     'profile.missing.categories': 'Work categories',
+    'profile.missing.serviceArea': 'Service area',
     'profile.missing.availability': 'Availability',
   };
 
@@ -59,6 +61,7 @@ export function workerProfileMissingItemKeys(worker?: WorkerProfile | null): Tra
   if (!worker.bio?.trim() || worker.bio.trim().length < 20) missing.push('profile.missing.bio');
   if (!Number.isFinite(hourlyRate) || hourlyRate <= 0) missing.push('profile.missing.hourlyRate');
   if (workerCategoryIds(worker).length === 0) missing.push('profile.missing.categories');
+  if (!worker.primaryServiceCity?.trim()) missing.push('profile.missing.serviceArea');
   if ((worker.availability?.length ?? 0) === 0) missing.push('profile.missing.availability');
 
   return missing;

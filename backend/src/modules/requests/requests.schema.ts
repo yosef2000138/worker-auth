@@ -23,6 +23,10 @@ export const createRequestSchema = z.object({
       emptyToUndefined,
       z.string().min(5).max(500).trim().optional().nullable(),
     ),
+    serviceCity:   z.preprocess(
+      emptyToUndefined,
+      z.string().min(1).max(100).trim().optional().nullable(),
+    ),
     scheduledAt:   z.string().datetime().optional(),
     paymentMethod: z.enum(['ONLINE', 'CASH']).default('CASH'),
   }).strict()

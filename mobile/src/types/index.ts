@@ -46,6 +46,11 @@ export type WorkerProfile = {
   hourlyRate?: number | string | null;
   fixedPrice?: number | string | null;
   workingRadius?: number;
+  primaryServiceCity?: string | null;
+  additionalServiceCities?: string[];
+  serviceRadiusKm?: number | null;
+  baseLatitude?: number | null;
+  baseLongitude?: number | null;
   ratingAvg?: number;
   ratingCount?: number;
   totalReviews?: number;
@@ -68,6 +73,7 @@ export type ServiceRequest = {
   lat?: number;
   lng?: number;
   address?: string;
+  serviceCity?: string | null;
   scheduledAt?: string | null;
   status: RequestStatus;
   paymentMethod?: PaymentMethod;
@@ -210,6 +216,7 @@ export type RootStackParamList = {
   Rating: { requestId: string };
   Chat: { requestId: string };
   OfferChat: { requestId: string; offerId: string };
+  Support: undefined;
   Notifications: undefined;
   Profile: undefined;
   WorkerOnboarding: undefined;

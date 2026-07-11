@@ -9,6 +9,7 @@ export const requestSelect = {
   lat: true,
   lng: true,
   address: true,
+  serviceCity: true,
   scheduledAt: true,
   priceAgreed: true,
   paymentMethod: true,
