@@ -27,13 +27,6 @@ export const updateWorkerProfileSchema = z.object({
         message: 'Base latitude and longitude must be provided together',
         path: ['baseLatitude'],
       },
-    )
-    .refine(
-      data => data.serviceRadiusKm == null || (data.baseLatitude != null && data.baseLongitude != null),
-      {
-        message: 'Base location is required when service radius is set',
-        path: ['serviceRadiusKm'],
-      },
     ),
 });
 
