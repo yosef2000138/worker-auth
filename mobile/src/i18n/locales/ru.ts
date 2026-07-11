@@ -119,6 +119,7 @@ export const ru = {
   "errors.invalidCredentials": "Эл. почта или пароль не подходят.",
   "errors.network": "Проблема с сетью. Проверьте подключение и попробуйте снова.",
   "errors.notFound": "Запрошенный объект не найден.",
+  "errors.onlinePaymentUnavailable": "Онлайн-оплата пока недоступна.",
   "errors.refreshFailed": "Не удалось обновить. Показаны последние загруженные данные.",
   "errors.requestAlreadyReviewed": "Эта заявка уже была оценена.",
   "errors.requestHasNoWorker": "К этой заявке не назначен исполнитель.",

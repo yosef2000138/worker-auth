@@ -8,6 +8,8 @@ export const apiErrorCodeTranslationKeys: Record<string, TranslationKey> = {
   WORKER_PRO_REQUIRED: 'errors.workerProRequired',
   DUPLICATE_ACTIVE_REQUEST: 'errors.duplicateActiveRequest',
   WORKER_PRO_NOT_AVAILABLE: 'subscription.message.backendDisabled',
+  PAYMENT_CONFIRM_DISABLED: 'errors.onlinePaymentUnavailable',
+  PAYMENT_PROVIDER_NOT_CONFIGURED: 'errors.onlinePaymentUnavailable',
   REQUEST_NOT_FOUND: 'errors.notFound',
   REQUEST_NOT_COMPLETED: 'errors.requestNotCompleted',
   REQUEST_HAS_NO_WORKER: 'errors.requestHasNoWorker',
@@ -44,4 +46,6 @@ export const apiErrorMessageTranslationKeys: Record<string, TranslationKey> = {
   'Worker profile not found': 'errors.notFound',
   'Request not found': 'errors.notFound',
   'Not your request': 'errors.forbidden',
+  'Online payments are not available in this build': 'errors.onlinePaymentUnavailable',
+  'Online payments are not available in this build.': 'errors.onlinePaymentUnavailable',
 };

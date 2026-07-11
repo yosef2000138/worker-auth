@@ -119,6 +119,7 @@ export const ar = {
   "errors.invalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
   "errors.network": "مشكلة في الشبكة. تحقق من الاتصال وحاول مرة أخرى.",
   "errors.notFound": "العنصر المطلوب غير موجود.",
+  "errors.onlinePaymentUnavailable": "الدفع الإلكتروني غير متاح حاليًا.",
   "errors.refreshFailed": "تعذر التحديث. نعرض آخر بيانات تم تحميلها.",
   "errors.requestAlreadyReviewed": "تمت مراجعة هذا الطلب من قبل.",
   "errors.requestHasNoWorker": "لا يوجد عامل معين لهذا الطلب.",

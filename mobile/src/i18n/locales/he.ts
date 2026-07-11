@@ -119,6 +119,7 @@ export const he = {
   "errors.invalidCredentials": "האימייל או הסיסמה אינם תואמים.",
   "errors.network": "בעיה ברשת. בדוק את החיבור ונסה שוב.",
   "errors.notFound": "הפריט המבוקש לא נמצא.",
+  "errors.onlinePaymentUnavailable": "תשלום אונליין עדיין לא זמין.",
   "errors.refreshFailed": "לא ניתן לרענן. מוצגים הנתונים האחרונים שנטענו.",
   "errors.requestAlreadyReviewed": "הבקשה הזו כבר נבדקה.",
   "errors.requestHasNoWorker": "לבקשה הזו לא שויך עובד.",

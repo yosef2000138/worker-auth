@@ -1,6 +1,14 @@
 import { db } from '../../config/database';
 import { CreatePaymentIntentInput, ConfirmPaymentInput } from './payments.schema';
 
+export function paymentProviderNotConfiguredError() {
+  return {
+    status: 501,
+    code: 'PAYMENT_PROVIDER_NOT_CONFIGURED',
+    message: 'Online payments are not available in this build.',
+  };
+}
+
 // ─── Shared payment select ────────────────────────────────────────────────────
 const paymentSelect = {
   id: true,
@@ -26,6 +34,8 @@ export async function createPaymentIntent(
   customerId: string,
   input: CreatePaymentIntentInput,
 ) {
+  throw paymentProviderNotConfiguredError();
+
   const request = await db.serviceRequest.findUnique({
     where: { id: input.requestId },
     include: { payment: true },
@@ -68,6 +78,8 @@ export async function createPaymentIntent(
 
 // ─── Confirm payment (called by Stripe webhook or manually for testing) ───────
 export async function confirmPayment(input: ConfirmPaymentInput) {
+  throw paymentProviderNotConfiguredError();
+
   const payment = await db.payment.findUnique({
     where: { requestId: input.requestId },
   });

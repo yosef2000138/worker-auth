@@ -119,6 +119,7 @@ export const en = {
   "errors.invalidCredentials": "The email or password does not match.",
   "errors.network": "Network problem. Check the connection and try again.",
   "errors.notFound": "The requested item was not found.",
+  "errors.onlinePaymentUnavailable": "Online payment is not available yet.",
   "errors.refreshFailed": "Could not refresh. Showing the last loaded data.",
   "errors.requestAlreadyReviewed": "This request was already reviewed.",
   "errors.requestHasNoWorker": "This request does not have an assigned worker.",
