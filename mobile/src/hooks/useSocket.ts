@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { SOCKET_URL } from '@/services/api';
+import { invalidateAuthSession, refreshAuthTokens, SOCKET_URL } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { useChatStore } from '@/store/chatStore';
 import { useNotificationStore } from '@/store/notificationStore';
@@ -44,13 +44,31 @@ export function useSocket() {
       }
     };
     const handleNotification = (n: NotificationItem) => addNotification(n);
+    const refreshSocketSession = () => {
+      void refreshAuthTokens().catch(() => invalidateAuthSession());
+    };
+    const handleConnectError = (error: Error) => {
+      const message = error.message.toLowerCase();
+      if (message.includes('token') || message.includes('session')) {
+        refreshSocketSession();
+      }
+    };
+    const handleDisconnect = (reason: Socket.DisconnectReason) => {
+      if (reason === 'io server disconnect') {
+        refreshSocketSession();
+      }
+    };
 
     socket.on('chat:message', handleChatMessage);
     socket.on('notification:new', handleNotification);
+    socket.on('connect_error', handleConnectError);
+    socket.on('disconnect', handleDisconnect);
 
     return () => {
       socket.off('chat:message', handleChatMessage);
       socket.off('notification:new', handleNotification);
+      socket.off('connect_error', handleConnectError);
+      socket.off('disconnect', handleDisconnect);
       socket.removeAllListeners();
       socket.disconnect();
     };

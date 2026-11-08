@@ -5,6 +5,7 @@ import {
   SubscriptionStatus,
   UserSubscription,
 } from '@prisma/client';
+import crypto from 'crypto';
 import { db } from '../../config/database';
 import { env } from '../../config/env';
 
@@ -80,12 +81,27 @@ export function getRevenueCatRuntimeConfig() {
   };
 }
 
-export function hasBackendWorkerProAccess(subscription?: Pick<UserSubscription, 'status' | 'expirationDate'> | null) {
+export function hasBackendWorkerProAccess(
+  subscription?: Pick<UserSubscription, 'status' | 'expirationDate' | 'environment'> | null,
+  runtimeEnvironment: 'development' | 'production' | 'test' = env.NODE_ENV,
+) {
   if (!subscription) return false;
 
-  return subscription.status === 'ACTIVE' &&
-    Boolean(subscription.expirationDate) &&
-    subscription.expirationDate!.getTime() > Date.now();
+  const accessStatuses: SubscriptionStatus[] = ['ACTIVE', 'TRIAL', 'GRACE_PERIOD', 'CANCELLED'];
+  const environmentAllowed = runtimeEnvironment !== 'production'
+    || subscription.environment === 'PRODUCTION';
+
+  return environmentAllowed
+    && accessStatuses.includes(subscription.status)
+    && Boolean(subscription.expirationDate)
+    && subscription.expirationDate!.getTime() > Date.now();
+}
+
+export function hasEnabledWorkerProAccess(
+  subscriptionsEnabled: boolean,
+  subscription?: Pick<UserSubscription, 'status' | 'expirationDate' | 'environment'> | null,
+) {
+  return subscriptionsEnabled && hasBackendWorkerProAccess(subscription);
 }
 
 export function buildWorkerAcceptanceAccess({
@@ -152,7 +168,7 @@ export async function getWorkerAcceptanceAccess(
 
   const [acceptedRequestCount, subscription] = await Promise.all([
     tx.workerAcceptanceUsage.count({ where: { workerId: worker.id } }),
-    config.configured
+    config.enabled && config.configured
       ? tx.userSubscription.findFirst({
         where: { userId, provider: PROVIDER, entitlementId: config.entitlementId },
         orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
@@ -165,7 +181,7 @@ export async function getWorkerAcceptanceAccess(
     freeAcceptedRequestLimit,
     subscriptionsEnabled: config.enabled,
     subscriptionsConfigured: config.configured,
-    hasSubscriptionAccess: hasBackendWorkerProAccess(subscription),
+    hasSubscriptionAccess: hasEnabledWorkerProAccess(config.enabled, subscription),
   });
 }
 
@@ -222,8 +238,45 @@ export function assertRevenueCatWebhookAuthorized(header: string | undefined) {
     throw { status: 503, message: 'RevenueCat webhook is not configured' };
   }
 
-  if (!header || (header !== token && header !== `Bearer ${token}`)) {
+  const provided = header?.replace(/^Bearer\s+/i, '') ?? '';
+  const providedDigest = crypto.createHash('sha256').update(provided).digest();
+  const expectedDigest = crypto.createHash('sha256').update(token).digest();
+  if (!provided || !crypto.timingSafeEqual(providedDigest, expectedDigest)) {
     throw { status: 401, message: 'Invalid webhook authorization' };
+  }
+}
+
+export function assertRevenueCatWebhookSignature(
+  rawBody: Buffer | undefined,
+  signatureHeader: string | undefined,
+  signingSecret: string | undefined = env.REVENUECAT_WEBHOOK_SIGNING_SECRET,
+  nowMs = Date.now(),
+) {
+  if (!signingSecret) return;
+  if (!rawBody || !signatureHeader) {
+    throw { status: 401, message: 'Missing webhook signature' };
+  }
+
+  const parts = Object.fromEntries(
+    signatureHeader.split(',').map(part => part.trim().split('=', 2) as [string, string]),
+  );
+  const timestamp = Number(parts.t);
+  const provided = parts.v1;
+  if (!Number.isInteger(timestamp) || !provided || !/^[a-f0-9]{64}$/i.test(provided)) {
+    throw { status: 401, message: 'Invalid webhook signature' };
+  }
+  if (Math.abs(nowMs - timestamp * 1000) > 5 * 60 * 1000) {
+    throw { status: 401, message: 'Expired webhook signature' };
+  }
+
+  const expected = crypto.createHmac('sha256', signingSecret)
+    .update(`${timestamp}.`)
+    .update(rawBody)
+    .digest('hex');
+  const providedBuffer = Buffer.from(provided, 'hex');
+  const expectedBuffer = Buffer.from(expected, 'hex');
+  if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
+    throw { status: 401, message: 'Invalid webhook signature' };
   }
 }
 
@@ -255,7 +308,9 @@ function asRecord(value: unknown): JsonRecord | null {
 }
 
 function asString(value: unknown) {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized.length > 0 && normalized.length <= 512 ? normalized : null;
 }
 
 function asBoolean(value: unknown) {
@@ -263,12 +318,18 @@ function asBoolean(value: unknown) {
 }
 
 function asDate(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) return new Date(value);
+  let date: Date | null = null;
+  if (typeof value === 'number' && Number.isFinite(value)) date = new Date(value);
   if (typeof value === 'string' && value.trim()) {
     const timestamp = Date.parse(value);
-    if (!Number.isNaN(timestamp)) return new Date(timestamp);
+    if (!Number.isNaN(timestamp)) date = new Date(timestamp);
   }
-  return null;
+  return date && !Number.isNaN(date.getTime()) ? date : null;
+}
+
+function asStringArray(value: unknown) {
+  if (!Array.isArray(value) || value.length > 50) return [];
+  return value.map(asString).filter((item): item is string => Boolean(item));
 }
 
 function firstString(...values: unknown[]) {
@@ -287,13 +348,18 @@ function firstDate(...values: unknown[]) {
   return null;
 }
 
-function normalizeRevenueCatEvent(body: unknown) {
+export function normalizeRevenueCatEvent(body: unknown) {
   const root = asRecord(body);
   if (!root) throw { status: 400, message: 'Malformed RevenueCat webhook body' };
 
   const event = asRecord(root.event) ?? root;
   const type = firstString(event.type, root.type);
   if (!type) throw { status: 400, message: 'RevenueCat webhook event type is missing' };
+
+  const eventId = firstString(event.id, event.event_id, root.id, root.event_id);
+  if (!eventId) throw { status: 400, message: 'RevenueCat webhook event ID is missing' };
+  const eventTimestamp = firstDate(event.event_timestamp_ms, event.eventTimestampMs);
+  if (!eventTimestamp) throw { status: 400, message: 'RevenueCat webhook event timestamp is missing' };
 
   const appUserId = firstString(event.app_user_id, event.appUserId, event.original_app_user_id, root.app_user_id);
   const originalTransactionId = firstString(
@@ -302,14 +368,18 @@ function normalizeRevenueCatEvent(body: unknown) {
     event.transaction_id,
     event.transactionId,
   );
-  const eventTimestamp = firstDate(event.event_timestamp_ms, event.eventTimestampMs, event.purchased_at_ms, event.purchaseDate);
-  const eventId = firstString(event.id, event.event_id, root.id, root.event_id)
-    ?? `${type}:${appUserId ?? 'unknown'}:${originalTransactionId ?? 'no-transaction'}:${eventTimestamp?.toISOString() ?? 'no-time'}`;
+  const entitlementIds = Array.from(new Set([
+    ...asStringArray(event.entitlement_ids),
+    ...asStringArray(event.entitlementIds),
+    firstString(event.entitlement_id, event.entitlementId),
+  ].filter((item): item is string => Boolean(item))));
 
   return {
     event,
     eventId,
     type,
+    eventTimestamp,
+    entitlementIds,
     appUserId,
     originalTransactionId,
     productId: firstString(event.product_id, event.productId, event.new_product_id),
@@ -323,6 +393,17 @@ function normalizeRevenueCatEvent(body: unknown) {
     billingIssueDate: firstDate(event.billing_issues_detected_at_ms, event.billingIssueDate),
     willRenew: asBoolean(event.will_renew) ?? asBoolean(event.willRenew),
   };
+}
+
+export function eventHasConfiguredEntitlement(
+  event: Pick<ReturnType<typeof normalizeRevenueCatEvent>, 'entitlementIds'>,
+  entitlementId = env.REVENUECAT_ENTITLEMENT_ID,
+) {
+  return event.entitlementIds.includes(entitlementId);
+}
+
+export function shouldApplyRevenueCatEvent(lastEventAt: Date | null, eventTimestamp: Date) {
+  return !lastEventAt || eventTimestamp >= lastEventAt;
 }
 
 async function upsertSubscription(
@@ -348,32 +429,32 @@ async function upsertSubscription(
     billingIssueDate: event.billingIssueDate,
     lastEventId: event.eventId,
     lastEventType: event.type,
+    lastEventAt: event.eventTimestamp,
   } satisfies Prisma.UserSubscriptionUncheckedCreateInput;
 
-  if (event.originalTransactionId) {
-    return tx.userSubscription.upsert({
+  const existing = event.originalTransactionId
+    ? await tx.userSubscription.findUnique({
       where: {
         provider_originalTransactionId: {
           provider: PROVIDER,
           originalTransactionId: event.originalTransactionId,
         },
       },
-      create: data,
-      update: data,
+    })
+    : await tx.userSubscription.findFirst({
+      where: {
+        userId,
+        provider: PROVIDER,
+        entitlementId: env.REVENUECAT_ENTITLEMENT_ID,
+        ...(event.productId && { storeProductId: event.productId }),
+      },
+      orderBy: { updatedAt: 'desc' },
     });
-  }
-
-  const existing = await tx.userSubscription.findFirst({
-    where: {
-      userId,
-      provider: PROVIDER,
-      entitlementId: env.REVENUECAT_ENTITLEMENT_ID,
-      ...(event.productId && { storeProductId: event.productId }),
-    },
-    orderBy: { updatedAt: 'desc' },
-  });
 
   if (existing) {
+    if (!shouldApplyRevenueCatEvent(existing.lastEventAt, event.eventTimestamp)) {
+      return existing;
+    }
     return tx.userSubscription.update({
       where: { id: existing.id },
       data,
@@ -383,16 +464,29 @@ async function upsertSubscription(
   return tx.userSubscription.create({ data });
 }
 
-export async function handleRevenueCatWebhook(body: unknown, authorizationHeader: string | undefined): Promise<RevenueCatWebhookResult> {
+export async function handleRevenueCatWebhook(
+  body: unknown,
+  authorizationHeader: string | undefined,
+  rawBody?: Buffer,
+  signatureHeader?: string,
+): Promise<RevenueCatWebhookResult> {
   assertRevenueCatWebhookAuthorized(authorizationHeader);
+  assertRevenueCatWebhookSignature(rawBody, signatureHeader);
   const config = getRevenueCatRuntimeConfig();
   if (!config.configured) {
     throw { status: 503, message: 'RevenueCat webhook is not configured' };
   }
 
   const event = normalizeRevenueCatEvent(body);
+  const mappedStatus = mapRevenueCatEventStatus(event.type, event.periodType);
+  const updatesWorkerPro = eventHasConfiguredEntitlement(event, config.entitlementId)
+    && mappedStatus !== 'UNKNOWN';
 
   return db.$transaction(async (tx) => {
+    const lockKey = event.originalTransactionId
+      ?? `${event.appUserId ?? 'unknown'}:${config.entitlementId}`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+
     const existingEvent = await tx.subscriptionWebhookEvent.findUnique({
       where: {
         provider_providerEventId: {
@@ -417,6 +511,7 @@ export async function handleRevenueCatWebhook(body: unknown, authorizationHeader
         provider: PROVIDER,
         providerEventId: event.eventId,
         type: event.type,
+        eventTimestamp: event.eventTimestamp,
       },
     });
 
@@ -424,13 +519,13 @@ export async function handleRevenueCatWebhook(body: unknown, authorizationHeader
       ? await tx.user.findUnique({ where: { id: event.appUserId }, select: { id: true } })
       : null;
 
-    if (user) {
+    if (user && updatesWorkerPro) {
       await upsertSubscription(tx, user.id, event);
     }
 
     await tx.subscriptionWebhookEvent.update({
       where: { id: webhookEvent.id },
-      data: { processedAt: new Date(), type: event.type },
+      data: { processedAt: new Date(), type: event.type, eventTimestamp: event.eventTimestamp },
     });
 
     return {

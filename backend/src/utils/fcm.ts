@@ -6,11 +6,10 @@
 
 export async function pushToUser(
   _userId: string,
-  title: string,
-  body: string,
-  data?: Record<string, string>,
+  _title: string,
+  _body: string,
+  _data?: Record<string, string>,
 ): Promise<void> {
   // TODO: look up the user's FCM token from a `device_tokens` table,
   // then call admin.messaging().send({ token, notification: { title, body }, data });
-  console.log('[FCM stub]', { title, body, data });
 }

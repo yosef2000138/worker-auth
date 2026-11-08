@@ -1,13 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'crypto';
 import {
   assertRevenueCatWebhookAuthorized,
+  assertRevenueCatWebhookSignature,
   buildWorkerAcceptanceAccess,
+  eventHasConfiguredEntitlement,
   getRevenueCatRuntimeConfig,
   hasBackendWorkerProAccess,
+  hasEnabledWorkerProAccess,
   mapRevenueCatEnvironment,
   mapRevenueCatEventStatus,
   mapRevenueCatPlatform,
+  normalizeRevenueCatEvent,
+  shouldApplyRevenueCatEvent,
 } from './subscriptions.service';
 
 test('subscriptions are safe when RevenueCat secrets are not configured', () => {
@@ -46,6 +52,59 @@ test('RevenueCat webhook rejects requests while token is missing', () => {
       return typed.status === 503 && typed.message === 'RevenueCat webhook is not configured';
     },
   );
+});
+
+test('RevenueCat webhook HMAC validates the raw body and timestamp', () => {
+  const rawBody = Buffer.from('{"event":{"id":"event-1"}}');
+  const secret = 's'.repeat(32);
+  const now = 1_700_000_000_000;
+  const timestamp = Math.floor(now / 1000);
+  const digest = crypto.createHmac('sha256', secret)
+    .update(`${timestamp}.`)
+    .update(rawBody)
+    .digest('hex');
+
+  assert.doesNotThrow(() => assertRevenueCatWebhookSignature(
+    rawBody,
+    `t=${timestamp},v1=${digest}`,
+    secret,
+    now,
+  ));
+  assert.throws(() => assertRevenueCatWebhookSignature(
+    rawBody,
+    `t=${timestamp},v1=${'0'.repeat(64)}`,
+    secret,
+    now,
+  ));
+  assert.throws(() => assertRevenueCatWebhookSignature(
+    rawBody,
+    `t=${timestamp - 600},v1=${digest}`,
+    secret,
+    now,
+  ));
+});
+
+test('RevenueCat events grant access only for the configured entitlement', () => {
+  const event = normalizeRevenueCatEvent({
+    api_version: '1.0',
+    event: {
+      id: 'event-1',
+      type: 'INITIAL_PURCHASE',
+      event_timestamp_ms: Date.now(),
+      entitlement_ids: ['worker_pro'],
+    },
+  });
+
+  assert.equal(eventHasConfiguredEntitlement(event, 'worker_pro'), true);
+  assert.equal(eventHasConfiguredEntitlement(event, 'another_plan'), false);
+  assert.throws(() => normalizeRevenueCatEvent({ event: { type: 'RENEWAL', event_timestamp_ms: Date.now() } }));
+});
+
+test('older RevenueCat events cannot overwrite newer subscription state', () => {
+  const latest = new Date('2026-01-02T00:00:00.000Z');
+  assert.equal(shouldApplyRevenueCatEvent(latest, new Date('2026-01-01T00:00:00.000Z')), false);
+  assert.equal(shouldApplyRevenueCatEvent(latest, new Date('2026-01-02T00:00:00.000Z')), true);
+  assert.equal(shouldApplyRevenueCatEvent(null, new Date('2026-01-01T00:00:00.000Z')), true);
 });
 
 test('worker acceptance access starts with zero used free requests', () => {
@@ -171,16 +230,31 @@ test('backend Worker Pro access only trusts active non-expired subscriptions', (
   const future = new Date(Date.now() + 60_000);
   const past = new Date(Date.now() - 60_000);
 
-  assert.equal(hasBackendWorkerProAccess({ status: 'ACTIVE', expirationDate: future }), true);
-  assert.equal(hasBackendWorkerProAccess({ status: 'ACTIVE', expirationDate: past }), false);
-  assert.equal(hasBackendWorkerProAccess({ status: 'ACTIVE', expirationDate: null }), false);
-  assert.equal(hasBackendWorkerProAccess({ status: 'TRIAL', expirationDate: future }), false);
-  assert.equal(hasBackendWorkerProAccess({ status: 'GRACE_PERIOD', expirationDate: future }), false);
-  assert.equal(hasBackendWorkerProAccess({ status: 'BILLING_ISSUE', expirationDate: future }), false);
-  assert.equal(hasBackendWorkerProAccess({ status: 'CANCELLED', expirationDate: future }), false);
-  assert.equal(hasBackendWorkerProAccess({ status: 'EXPIRED', expirationDate: future }), false);
-  assert.equal(hasBackendWorkerProAccess({ status: 'REFUNDED', expirationDate: future }), false);
-  assert.equal(hasBackendWorkerProAccess({ status: 'UNKNOWN', expirationDate: future }), false);
+  assert.equal(hasBackendWorkerProAccess({ status: 'ACTIVE', expirationDate: future, environment: 'PRODUCTION' }), true);
+  assert.equal(hasBackendWorkerProAccess({ status: 'ACTIVE', expirationDate: past, environment: 'PRODUCTION' }), false);
+  assert.equal(hasBackendWorkerProAccess({ status: 'ACTIVE', expirationDate: null, environment: 'PRODUCTION' }), false);
+  assert.equal(hasBackendWorkerProAccess({ status: 'TRIAL', expirationDate: future, environment: 'PRODUCTION' }), true);
+  assert.equal(hasBackendWorkerProAccess({ status: 'GRACE_PERIOD', expirationDate: future, environment: 'PRODUCTION' }), true);
+  assert.equal(hasBackendWorkerProAccess({ status: 'BILLING_ISSUE', expirationDate: future, environment: 'PRODUCTION' }), false);
+  assert.equal(hasBackendWorkerProAccess({ status: 'CANCELLED', expirationDate: future, environment: 'PRODUCTION' }), true);
+  assert.equal(hasBackendWorkerProAccess({ status: 'EXPIRED', expirationDate: future, environment: 'PRODUCTION' }), false);
+  assert.equal(hasBackendWorkerProAccess({ status: 'REFUNDED', expirationDate: future, environment: 'PRODUCTION' }), false);
+  assert.equal(hasBackendWorkerProAccess({ status: 'UNKNOWN', expirationDate: future, environment: 'PRODUCTION' }), false);
+  assert.equal(hasBackendWorkerProAccess(
+    { status: 'ACTIVE', expirationDate: future, environment: 'SANDBOX' },
+    'production',
+  ), false);
+});
+
+test('subscription kill switch prevents stored access from bypassing quota', () => {
+  const activeSubscription = {
+    status: 'ACTIVE' as const,
+    expirationDate: new Date(Date.now() + 60_000),
+    environment: 'PRODUCTION' as const,
+  };
+
+  assert.equal(hasEnabledWorkerProAccess(false, activeSubscription), false);
+  assert.equal(hasEnabledWorkerProAccess(true, activeSubscription), true);
 });
 
 test('exhausted worker can accept only with active backend subscription access', () => {
@@ -189,14 +263,22 @@ test('exhausted worker can accept only with active backend subscription access',
     freeAcceptedRequestLimit: 5,
     subscriptionsEnabled: true,
     subscriptionsConfigured: true,
-    hasSubscriptionAccess: hasBackendWorkerProAccess({ status: 'EXPIRED', expirationDate: new Date(Date.now() + 60_000) }),
+    hasSubscriptionAccess: hasBackendWorkerProAccess({
+      status: 'EXPIRED',
+      expirationDate: new Date(Date.now() + 60_000),
+      environment: 'PRODUCTION',
+    }),
   });
   const allowed = buildWorkerAcceptanceAccess({
     acceptedRequestCount: 5,
     freeAcceptedRequestLimit: 5,
     subscriptionsEnabled: true,
     subscriptionsConfigured: true,
-    hasSubscriptionAccess: hasBackendWorkerProAccess({ status: 'ACTIVE', expirationDate: new Date(Date.now() + 60_000) }),
+    hasSubscriptionAccess: hasBackendWorkerProAccess({
+      status: 'ACTIVE',
+      expirationDate: new Date(Date.now() + 60_000),
+      environment: 'PRODUCTION',
+    }),
   });
 
   assert.equal(blocked.canAcceptRequest, false);

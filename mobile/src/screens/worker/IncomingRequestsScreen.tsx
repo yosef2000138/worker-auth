@@ -5,7 +5,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { WorkerOfferActionCard } from '@/components/offers/WorkerOfferActionCard';
 import { MapPreview } from '@/components/map';
-import { Body, BodySm, Button, Card, EmptyState, ErrorState, H2, Row, Screen, Stack, StatusBadge } from '@/components/ui';
+import { Body, BodySm, Button, Card, EmptyState, ErrorState, H2, InfoRow, Row, Screen, SectionHeader, Stack, StatusBadge, StatusPill } from '@/components/ui';
 import { requestService } from '@/services/requestService';
 import { Paginated, RequestOfferStatus, RootStackParamList, ServiceRequest } from '@/types';
 import { colors, spacing } from '@/theme';
@@ -50,6 +50,7 @@ export default function IncomingRequestsScreen() {
       <View style={styles.header}>
         <H2>{t('worker.requests.title')}</H2>
         <BodySm color={colors.textSecondary}>{t('worker.requests.pendingNear', { count: items.length })}</BodySm>
+        <BodySm color={colors.textSecondary}>{t('worker.requests.helper')}</BodySm>
       </View>
       {isLoading ? (
         <View style={styles.list}>
@@ -66,6 +67,13 @@ export default function IncomingRequestsScreen() {
           data={items}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
+          ListHeaderComponent={
+            <SectionHeader
+              title={t('worker.requests.openJobs')}
+              subtitle={t('worker.requests.openJobsHint')}
+            />
+          }
+          ListHeaderComponentStyle={styles.listHeader}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />}
           ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
           renderItem={({ item }) => (
@@ -74,17 +82,32 @@ export default function IncomingRequestsScreen() {
                 <Row justify="space-between" align="flex-start">
                   <Stack gap={spacing.xs} style={{ flex: 1 }}>
                     <Body weight="bold">{item.title}</Body>
-                    <BodySm color={colors.textSecondary}>
-                      {item.category ? getLocalizedCategoryName(item.category, language.code, t) : t('worker.requests.serviceRequest')}
-                    </BodySm>
+                    <StatusPill
+                      label={item.category ? getLocalizedCategoryName(item.category, language.code, t) : t('worker.requests.serviceRequest')}
+                      tone="brand"
+                      icon="briefcase-outline"
+                    />
                     {item.createdAt ? <BodySm color={colors.textTertiary}>{formatAppDate(item.createdAt, locale)}</BodySm> : null}
-                    <BodySm color={colors.textSecondary}>
-                      {t('offers.count', { count: item.offerCount ?? 0, limit: item.maxOffers ?? 5 })}
-                    </BodySm>
                   </Stack>
                   <StatusBadge status={item.status} />
                 </Row>
                 <BodySm color={colors.textSecondary}>{item.description}</BodySm>
+                <Row gap={spacing.md} wrap>
+                  <View style={styles.infoItem}>
+                    <InfoRow
+                      icon="location-outline"
+                      label={t('worker.requests.location')}
+                      value={item.address || item.serviceCity || t('requests.location.notProvided')}
+                    />
+                  </View>
+                  <View style={styles.infoItem}>
+                    <InfoRow
+                      icon="people-outline"
+                      label={t('worker.requests.offersReceived')}
+                      value={t('offers.count', { count: item.offerCount ?? 0, limit: item.maxOffers ?? 5 })}
+                    />
+                  </View>
+                </Row>
                 <MapPreview address={item.address} lat={item.lat} lng={item.lng} />
                 <Row gap={spacing.sm} wrap>
                   <Button
@@ -135,6 +158,8 @@ export default function IncomingRequestsScreen() {
 const styles = StyleSheet.create({
   header: { padding: spacing.lg, gap: spacing.xs },
   list: { padding: spacing.lg, paddingBottom: spacing['4xl'] },
+  listHeader: { marginBottom: spacing.md },
+  infoItem: { flexBasis: '48%', flexGrow: 1 },
   requestAction: { flexBasis: '48%', flexGrow: 1 },
   skeleton: { height: 88, borderRadius: 12, backgroundColor: '#E5E7EB' },
 });

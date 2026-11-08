@@ -15,7 +15,11 @@ export async function revenueCatWebhook(req: Request, res: Response, next: NextF
     const authorization = Array.isArray(req.headers.authorization)
       ? req.headers.authorization[0]
       : req.headers.authorization;
-    const data = await service.handleRevenueCatWebhook(req.body, authorization);
+    const signature = Array.isArray(req.headers['x-revenuecat-webhook-signature'])
+      ? req.headers['x-revenuecat-webhook-signature'][0]
+      : req.headers['x-revenuecat-webhook-signature'];
+    const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+    const data = await service.handleRevenueCatWebhook(req.body, authorization, rawBody, signature);
     res.json({ success: true, data });
   } catch (err) {
     next(err);

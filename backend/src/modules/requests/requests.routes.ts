@@ -4,7 +4,8 @@ import * as controller from './requests.controller';
 import { authenticate } from '../../middlewares/authenticate';
 import { authorize } from '../../middlewares/authorize';
 import { validate } from '../../middlewares/validate';
-import { upload } from '../../middlewares/upload';
+import { upload, validateUploadedImages } from '../../middlewares/upload';
+import { messageWriteLimiter } from '../../middlewares/rateLimiters';
 import {
   createRequestSchema,
   updateStatusSchema,
@@ -29,6 +30,7 @@ router.post(
   '/',
   authorize('CUSTOMER'),
   upload.array('images', 5),
+  validateUploadedImages,
   validate(createRequestSchema),
   controller.create,
 );
@@ -75,6 +77,7 @@ router.get(
 
 router.post(
   '/:requestId/offers/:offerId/messages',
+  messageWriteLimiter,
   validate(sendOfferMessageSchema),
   controller.sendOfferMessage,
 );

@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { db } from '../config/database';
 import { pushToUser } from '../utils/fcm';
+import { logger } from '../utils/logger';
 
 export interface NotificationJobPayload {
   userId: string;
@@ -38,7 +39,7 @@ export async function dispatchNotification(payload: NotificationJobPayload): Pro
 
     // 2. Push via FCM (fire-and-forget)
     pushToUser(userId, title, body, { ...(data ?? {}), notificationId: notification.id })
-      .catch((err) => console.error('[FCM] push failed:', err));
+      .catch(() => logger.error('notification.push_failed', { userId, type }));
 
     // 3. Emit via Socket.IO if available (lazy import to avoid circular deps)
     try {
@@ -48,8 +49,8 @@ export async function dispatchNotification(payload: NotificationJobPayload): Pro
     } catch {
       // Socket.IO may not be initialised in test environments — that's fine
     }
-  } catch (err) {
-    console.error('[NotificationJob] Failed to dispatch notification:', err);
+  } catch {
+    logger.error('notification.dispatch_failed', { userId, type });
     // Do not rethrow — notification failure should never crash the main flow
   }
 }

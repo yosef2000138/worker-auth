@@ -44,6 +44,20 @@ export class ApiRequestError extends Error {
 export const api = axios.create({ baseURL: API_URL, timeout: 120000, headers: { Accept: 'application/json' } });
 
 let refreshPromise: Promise<AuthResult | null> | null = null;
+const sessionInvalidationHandlers = new Set<() => Promise<void> | void>();
+
+export function addSessionInvalidationHandler(handler: () => Promise<void> | void) {
+  sessionInvalidationHandlers.add(handler);
+  return () => {
+    sessionInvalidationHandlers.delete(handler);
+  };
+}
+
+export async function invalidateAuthSession() {
+  await clearTokens();
+  await Promise.all(Array.from(sessionInvalidationHandlers, handler => handler()));
+  useAuthStore.getState().logoutLocal();
+}
 
 async function performRefresh() {
   const refreshToken = await getRefreshToken();
@@ -55,6 +69,9 @@ async function performRefresh() {
     { headers: { Accept: 'application/json' } },
   );
   const data = response.data.data;
+  if ((await getRefreshToken()) !== refreshToken) {
+    return null;
+  }
   await setTokens(data.accessToken, data.refreshToken);
   useAuthStore.getState().setAuth(data);
   return data;
@@ -98,11 +115,9 @@ api.interceptors.response.use(r => r, async (error: AxiosError<ApiErrorBody>) =>
         return api(originalRequest);
       }
 
-      await clearTokens();
-      useAuthStore.getState().logoutLocal();
+      await invalidateAuthSession();
     } catch {
-      await clearTokens();
-      useAuthStore.getState().logoutLocal();
+      await invalidateAuthSession();
     }
   }
 
@@ -118,10 +133,18 @@ api.interceptors.response.use(r => r, async (error: AxiosError<ApiErrorBody>) =>
   }));
 });
 
-export async function setTokens(accessToken?: string, refreshToken?: string) {
-  if (accessToken) await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken);
-  if (refreshToken) await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken);
+export async function setTokens(accessToken: string, refreshToken: string) {
+  const options = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
+  await Promise.all([
+    SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken, options),
+    SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken, options),
+  ]);
 }
-export async function clearTokens() { await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY); await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY); }
+export async function clearTokens() {
+  await Promise.all([
+    SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY),
+    SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY),
+  ]);
+}
 export async function getRefreshToken() { return SecureStore.getItemAsync(REFRESH_TOKEN_KEY); }
 export const unwrap = <T,>(response: { data: { data: T } }) => response.data.data;

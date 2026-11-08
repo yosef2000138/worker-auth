@@ -1,4 +1,6 @@
 import { db } from '../../config/database';
+import { revokeSession } from '../../config/redis';
+import { disconnectUserSockets } from '../../sockets';
 import { comparePassword, hashPassword } from '../../utils/bcrypt';
 import { UpdateProfileInput, ChangePasswordInput } from './users.schema';
 
@@ -109,8 +111,10 @@ export async function changePassword(userId: string, input: ChangePasswordInput)
 
   const passwordHash = await hashPassword(input.newPassword);
   await db.user.update({ where: { id: userId }, data: { passwordHash } });
+  await revokeSession(userId);
+  disconnectUserSockets(userId);
 
-  return { message: 'Password changed successfully' };
+  return { message: 'Password changed successfully. Please log in again.' };
 }
 
 // ─── Request history ─────────────────────────────────────────────────────────

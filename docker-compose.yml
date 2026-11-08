@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   postgres:
     image: postgis/postgis:16-3.4-alpine
@@ -12,7 +10,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U worker']
+      test: ['CMD-SHELL', 'pg_isready -U worker -d worker_db']
       interval: 5s
       timeout: 5s
       retries: 5
@@ -37,6 +35,9 @@ services:
     ports:
       - '3000:3000'
     env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://worker:worker@postgres:5432/worker_db
+      REDIS_URL: redis://redis:6379
     depends_on:
       postgres:
         condition: service_healthy

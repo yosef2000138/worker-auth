@@ -1,5 +1,12 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, RequestStatus, UserRole } from '@prisma/client';
 import { db } from '../../config/database';
+import { revokeSession } from '../../config/redis';
+import { disconnectUserSockets } from '../../sockets';
+import {
+  expireOffersForCancelledRequest,
+  lockRequestOfferSlot,
+  notifyCancelledOfferRecipients,
+} from '../requests/offers.service';
 
 // ─── Dashboard stats ──────────────────────────────────────────────────────────
 export async function getDashboard() {
@@ -103,7 +110,7 @@ export async function getAnalytics(from?: string, to?: string) {
 
 // ─── Users management ─────────────────────────────────────────────────────────
 export async function listUsers(opts: {
-  role?: string;
+  role?: UserRole;
   isActive?: boolean;
   search?: string;
   page: number;
@@ -113,7 +120,7 @@ export async function listUsers(opts: {
   const skip = (page - 1) * limit;
 
   const where: Prisma.UserWhereInput = {
-    ...(role && { role: role as any }),
+    ...(role && { role }),
     ...(isActive !== undefined && { isActive }),
     ...(search && {
       OR: [
@@ -182,11 +189,14 @@ export async function suspendUser(id: string) {
   if (!user) throw { status: 404, message: 'User not found' };
   if (user.role === 'ADMIN') throw { status: 403, message: 'Cannot suspend an admin' };
 
-  return db.user.update({
+  const suspended = await db.user.update({
     where: { id },
     data: { isActive: false },
     select: { id: true, isActive: true, email: true },
   });
+  await revokeSession(id);
+  disconnectUserSockets(id);
+  return suspended;
 }
 
 export async function reinstateUser(id: string) {
@@ -286,7 +296,7 @@ export async function revokeWorkerApproval(id: string) {
 
 // ─── Jobs / requests management ───────────────────────────────────────────────
 export async function listRequestsAdmin(opts: {
-  status?: string;
+  status?: RequestStatus;
   page: number;
   limit: number;
 }) {
@@ -294,7 +304,7 @@ export async function listRequestsAdmin(opts: {
   const skip = (page - 1) * limit;
 
   const where: Prisma.ServiceRequestWhereInput = {
-    ...(status && { status: status as any }),
+    ...(status && { status }),
   };
 
   const [total, items] = await Promise.all([
@@ -322,17 +332,27 @@ export async function listRequestsAdmin(opts: {
 }
 
 export async function cancelRequestAdmin(id: string) {
-  const request = await db.serviceRequest.findUnique({ where: { id } });
-  if (!request) throw { status: 404, message: 'Request not found' };
-  if (request.status === 'COMPLETED' || request.status === 'CANCELLED') {
-    throw { status: 422, message: `Cannot cancel a ${request.status.toLowerCase()} request` };
-  }
+  const result = await db.$transaction(async tx => {
+    await lockRequestOfferSlot(tx, id);
+    const request = await tx.serviceRequest.findUnique({ where: { id } });
+    if (!request) throw { status: 404, message: 'Request not found' };
+    if (request.status === 'COMPLETED' || request.status === 'CANCELLED') {
+      throw { status: 422, message: `Cannot cancel a ${request.status.toLowerCase()} request` };
+    }
 
-  return db.serviceRequest.update({
-    where: { id },
-    data: { status: 'CANCELLED' },
-    select: { id: true, status: true },
-  });
+    const changed = await tx.serviceRequest.updateMany({
+      where: { id, status: request.status },
+      data: { status: 'CANCELLED', activeJobKey: null },
+    });
+    if (changed.count !== 1) {
+      throw { status: 409, code: 'REQUEST_STATUS_CHANGED', message: 'Request status changed. Refresh and try again.' };
+    }
+    const expiredOffers = await expireOffersForCancelledRequest(tx, id);
+    return { request: { id, status: 'CANCELLED' as const }, expiredOffers };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+  notifyCancelledOfferRecipients(id, result.expiredOffers);
+  return result.request;
 }
 
 // ─── Service categories management ───────────────────────────────────────────

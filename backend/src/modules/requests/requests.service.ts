@@ -1,9 +1,15 @@
 import { RequestStatus, Prisma } from '@prisma/client';
 import { db } from '../../config/database';
-import { uploadBuffer } from '../../config/cloudinary';
+import { env } from '../../config/env';
+import { deleteUploadedAsset, UploadedAsset, uploadBuffer } from '../../config/cloudinary';
 import { pushToUser } from '../../utils/fcm';
+import { runSerializableTransaction } from '../../utils/prismaTransaction';
 import { WorkerAcceptanceAccess } from '../subscriptions/subscriptions.service';
-import { closeOffersForCancelledRequest } from './offers.service';
+import {
+  expireOffersForCancelledRequest,
+  lockRequestOfferSlot,
+  notifyCancelledOfferRecipients,
+} from './offers.service';
 import {
   ACTIVE_OFFER_STATUSES,
   addOfferMetaToRequests,
@@ -264,10 +270,20 @@ export async function createRequest(
     throw duplicateActiveRequestError(duplicate);
   }
 
-  const imageUrls =
-    files.length > 0
-      ? await Promise.all(files.map((f) => uploadBuffer(f.buffer, 'worker/requests')))
-      : [];
+  let uploadedAssets: UploadedAsset[] = [];
+  if (files.length > 0) {
+    const uploadResults = await Promise.allSettled(
+      files.map(file => uploadBuffer(file.buffer, 'worker/requests')),
+    );
+    uploadedAssets = uploadResults
+      .filter((result): result is PromiseFulfilledResult<UploadedAsset> => result.status === 'fulfilled')
+      .map(result => result.value);
+
+    if (uploadResults.some(result => result.status === 'rejected')) {
+      await Promise.allSettled(uploadedAssets.map(deleteUploadedAsset));
+      throw { status: 502, code: 'IMAGE_UPLOAD_FAILED', message: 'Could not upload request images' };
+    }
+  }
 
   let request: Prisma.ServiceRequestGetPayload<{ select: typeof requestSelect }>;
   try {
@@ -285,12 +301,13 @@ export async function createRequest(
         scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : undefined,
         paymentMethod: body.paymentMethod,
         images: {
-          create: imageUrls.map((url, order) => ({ imageUrl: url, order })),
+            create: uploadedAssets.map((asset, order) => ({ imageUrl: asset.url, order })),
         },
       },
       select: requestSelect,
     });
   } catch (error) {
+    await Promise.allSettled(uploadedAssets.map(deleteUploadedAsset));
     if (isUniqueConstraintError(error)) {
       const concurrentDuplicate = await findActiveDuplicateByJobKey(activeJobKey);
       if (concurrentDuplicate) throw duplicateActiveRequestError(concurrentDuplicate);
@@ -378,25 +395,52 @@ export async function listRequests(
     if (status === 'PENDING') {
       const candidates = await db.serviceRequest.findMany({
         where,
-        select: requestSelect,
+        select: {
+          id: true,
+          scheduledAt: true,
+          lat: true,
+          lng: true,
+          address: true,
+          serviceCity: true,
+          offers: {
+            where: { workerId: worker.id, status: { in: ACTIVE_OFFER_STATUSES } },
+            select: { id: true },
+            take: 1,
+          },
+          _count: {
+            select: { offers: { where: { status: { in: ACTIVE_OFFER_STATUSES } } } },
+          },
+        },
         orderBy: { createdAt: 'desc' },
       });
-      const scheduledCandidates = candidates.filter(item =>
+      const matchingCandidates = candidates.filter(item =>
         workerMatchesSchedule(worker, item.scheduledAt) &&
-        workerMatchesServiceArea(worker, item),
+        workerMatchesServiceArea(worker, item) &&
+        (item.offers.length > 0 || item._count.offers < env.MAX_OFFERS_PER_REQUEST),
       );
-      const itemsWithOfferMeta = await addOfferMetaToRequests(db, scheduledCandidates);
-      const itemsWithViewerOfferState = await addWorkerOfferState(itemsWithOfferMeta, workerIdForOfferState);
-      const filteredItems = itemsWithViewerOfferState.filter(item => {
-        if (item.worker) return true;
-        if ('hasMyOffer' in item && item.hasMyOffer) return true;
-        return item.offerCount < item.maxOffers;
+      const pageCandidateIds = matchingCandidates.slice(skip, skip + limit).map(item => item.id);
+      const pageRequests = pageCandidateIds.length === 0
+        ? []
+        : await db.serviceRequest.findMany({
+          where: { id: { in: pageCandidateIds } },
+          select: requestSelect,
+        });
+      const requestsById = new Map(pageRequests.map(item => [item.id, item]));
+      const orderedPageRequests = pageCandidateIds.flatMap(id => {
+        const item = requestsById.get(id);
+        return item ? [item] : [];
       });
-      const pageItems = filteredItems.slice(skip, skip + limit);
+      const itemsWithOfferMeta = await addOfferMetaToRequests(db, orderedPageRequests);
+      const pageItems = await addWorkerOfferState(itemsWithOfferMeta, workerIdForOfferState);
 
       return {
         items: serializeRequestsForViewer(pageItems, { userId, role, workerId: workerIdForOfferState }),
-        pagination: { total: filteredItems.length, page, limit, pages: Math.ceil(filteredItems.length / limit) },
+        pagination: {
+          total: matchingCandidates.length,
+          page,
+          limit,
+          pages: Math.ceil(matchingCandidates.length / limit),
+        },
       };
     }
   }
@@ -511,59 +555,74 @@ export async function updateStatus(
   newStatus: RequestStatus,
   cancellationReason?: string,
 ): Promise<RequestStatusUpdateResult> {
-  const request = await db.serviceRequest.findUnique({
-    where: { id },
-    include: {
-      customer: true,
-      worker: { include: { user: true } },
-    },
-  });
-  if (!request) throw { status: 404, message: 'Request not found' };
+  const result = await runSerializableTransaction(async tx => {
+    await lockRequestOfferSlot(tx, id);
 
-  if (role === 'CUSTOMER' && request.customerId !== userId) {
-    throw { status: 403, message: 'Not your request' };
-  }
-  if (role === 'WORKER') {
-    const isAssigned = request.worker?.userId === userId;
-    if (newStatus === 'ACCEPTED') {
+    const request = await tx.serviceRequest.findUnique({
+      where: { id },
+      include: {
+        customer: true,
+        worker: { include: { user: true } },
+      },
+    });
+    if (!request) throw { status: 404, message: 'Request not found' };
+
+    if (role === 'CUSTOMER' && request.customerId !== userId) {
+      throw { status: 403, message: 'Not your request' };
+    }
+    if (role === 'WORKER') {
+      const isAssigned = request.worker?.userId === userId;
+      if (newStatus === 'ACCEPTED') {
+        throw {
+          status: 409,
+          code: 'CUSTOMER_CONFIRMATION_REQUIRED',
+          message: 'Workers can send offers, but only the customer can choose and accept one.',
+        };
+      }
+      if (!isAssigned) {
+        throw { status: 403, message: 'You are not assigned to this request' };
+      }
+    }
+
+    assertTransition(request.status, newStatus, role);
+
+    const changed = await tx.serviceRequest.updateMany({
+      where: { id, status: request.status },
+      data: {
+        status: newStatus,
+        activeJobKey: activeJobKeyForStatus(newStatus),
+      },
+    });
+    if (changed.count !== 1) {
       throw {
         status: 409,
-        code: 'CUSTOMER_CONFIRMATION_REQUIRED',
-        message: 'Workers can send offers, but only the customer can choose and accept one.',
+        code: 'REQUEST_STATUS_CHANGED',
+        message: 'Request status changed. Refresh and try again.',
       };
     }
-    if (!isAssigned) {
-      throw { status: 403, message: 'You are not assigned to this request' };
+
+    if (newStatus === 'COMPLETED' && request.worker) {
+      await tx.worker.update({
+        where: { id: request.worker.id },
+        data: { totalJobs: { increment: 1 } },
+      });
     }
-  }
 
-  assertTransition(request.status, newStatus, role);
+    const expiredOffers = newStatus === 'CANCELLED'
+      ? await expireOffersForCancelledRequest(tx, id)
+      : [];
+    const updated = await tx.serviceRequest.findUnique({ where: { id }, select: requestSelect });
+    if (!updated) throw { status: 404, message: 'Request not found' };
+    const [updatedWithOfferMeta] = await addOfferMetaToRequests(tx, [updated]);
 
-  const updated = await db.serviceRequest.update({
-    where: { id },
-    data: {
-      status: newStatus,
-      activeJobKey: activeJobKeyForStatus(newStatus),
-    },
-    select: requestSelect,
+    return { request, updated: updatedWithOfferMeta, expiredOffers };
   });
 
-  // Increment completed jobs counter
-  if (newStatus === 'COMPLETED' && request.worker) {
-    await db.worker.update({
-      where: { id: request.worker.id },
-      data: { totalJobs: { increment: 1 } },
-    });
-  }
-
   if (newStatus === 'CANCELLED') {
-    await closeOffersForCancelledRequest(id);
+    notifyCancelledOfferRecipients(id, result.expiredOffers);
   }
-
-  pushStatusNotification(id, request, role, newStatus, cancellationReason);
-
-  const [updatedWithOfferMeta] = await addOfferMetaToRequests(db, [updated]);
-  return updatedWithOfferMeta;
+  pushStatusNotification(id, result.request, role, newStatus, cancellationReason);
+  return result.updated;
 }
 
 // ─── Cancel ───────────────────────────────────────────────────────────────────

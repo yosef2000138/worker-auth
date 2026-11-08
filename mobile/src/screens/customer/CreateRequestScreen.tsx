@@ -8,7 +8,7 @@ import { RootStackParamList } from '@/types';
 import { requestService } from '@/services/requestService';
 import { workerService } from '@/services/workerService';
 import { useAuthStore } from '@/store/authStore';
-import { Banner, BodySm, Button, Card, Field, H2, Row, Stack } from '@/components/ui';
+import { Banner, Body, BodySm, Button, Card, Field, H2, Row, SectionHeader, Stack, StatusPill } from '@/components/ui';
 import { useLocation } from '@/hooks/useLocation';
 import { getLocalizedCategoryName, useLanguage } from '@/i18n';
 import { colors, spacing } from '@/theme';
@@ -148,6 +148,10 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
 
       <Card>
         <Stack gap={spacing.md}>
+          <SectionHeader
+            title={t('requests.create.stepService')}
+            subtitle={t('requests.create.stepServiceHint')}
+          />
           <Field
             label={t('requests.create.category')}
             placeholder={t('requests.create.selectCategory')}
@@ -174,6 +178,10 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
             <Button title={t('requests.create.browseCategories')} variant="outline" onPress={() => navigation.navigate('Categories')} />
           )}
 
+          <SectionHeader
+            title={t('requests.create.stepDescribe')}
+            subtitle={t('requests.create.stepDescribeHint')}
+          />
           <Field
             label={t('requests.create.problemTitle')}
             placeholder={t('requests.create.titlePlaceholder')}
@@ -196,11 +204,16 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
             multiline
             style={{ minHeight: 84, textAlignVertical: 'top' }}
           />
+
+          <SectionHeader
+            title={t('requests.create.stepLocation')}
+            subtitle={t('requests.create.stepLocationHint')}
+          />
           <Card style={styles.locationCard}>
             <Stack gap={spacing.sm}>
               <Row gap={spacing.sm} align="center">
                 <Ionicons name="location-outline" size={18} color={colors.primary} />
-                <BodySm weight="bold">{t('requests.create.locationOptionalTitle')}</BodySm>
+                <StatusPill label={t('requests.create.locationOptionalTitle')} tone="brand" icon="information-circle-outline" />
               </Row>
               <BodySm color={colors.textSecondary}>{t('requests.create.locationOptionalHelper')}</BodySm>
               <Field
@@ -276,6 +289,10 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
             </Stack>
           </Card>
 
+          <SectionHeader
+            title={t('requests.create.stepSubmit')}
+            subtitle={t('requests.create.stepSubmitHint')}
+          />
           <Row gap={spacing.sm}>
             <Button
               title={image ? t('requests.create.imageAdded') : t('requests.create.addImage')}
@@ -286,6 +303,16 @@ export default function CreateRequestScreen({ route, navigation }: Props) {
               style={{ flex: 1 }}
             />
           </Row>
+
+          <Card style={styles.betaPaymentCard}>
+            <Row gap={spacing.sm} align="flex-start">
+              <Ionicons name="cash-outline" size={18} color={colors.success} />
+              <Stack gap={spacing.xs} style={{ flex: 1 }}>
+                <Body weight="bold">{t('requests.create.cashBetaTitle')}</Body>
+                <BodySm color={colors.textSecondary}>{t('requests.create.cashBetaHelper')}</BodySm>
+              </Stack>
+            </Row>
+          </Card>
 
           {!canSubmit ? <BodySm color={colors.textSecondary}>{t('requests.create.completeRequired')}</BodySm> : null}
           <Button title={t('requests.create.submit')} loading={create.isPending} onPress={handleSubmit} />
@@ -300,4 +327,5 @@ const styles = StyleSheet.create({
   content: { padding: spacing.lg, paddingBottom: spacing['4xl'], gap: spacing.lg },
   locationCard: { backgroundColor: colors.brandSoftest },
   locationAction: { flexBasis: '48%', flexGrow: 1 },
+  betaPaymentCard: { backgroundColor: colors.successSoft, borderColor: colors.successSoft },
 });

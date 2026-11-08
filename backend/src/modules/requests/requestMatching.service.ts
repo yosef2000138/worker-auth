@@ -24,7 +24,7 @@ type MatchRequest = {
   category?: { name?: string | null } | null;
 };
 
-const eligibleWorkerSelect = {
+export const eligibleWorkerSelect = {
   id: true,
   userId: true,
   bio: true,
@@ -97,6 +97,55 @@ function hasWorkerRadius(worker: Pick<EligibleWorker, 'baseLatitude' | 'baseLong
 
 function hasWorkerCityArea(worker: Pick<EligibleWorker, 'primaryServiceCity' | 'additionalServiceCities'>) {
   return Boolean(normalizeCity(worker.primaryServiceCity)) || worker.additionalServiceCities.length > 0;
+}
+
+export function buildServiceAreaWhereFromWorker(
+  worker: Pick<EligibleWorker, 'primaryServiceCity' | 'additionalServiceCities' | 'serviceRadiusKm' | 'baseLatitude' | 'baseLongitude'>,
+): Prisma.ServiceRequestWhereInput | null {
+  const cities = Array.from(new Set([
+    normalizeCity(worker.primaryServiceCity),
+    ...worker.additionalServiceCities.map(normalizeCity),
+  ].filter(Boolean)));
+  const noLocation: Prisma.ServiceRequestWhereInput = {
+    lat: null,
+    lng: null,
+    serviceCity: null,
+  };
+
+  if (hasWorkerRadius(worker)) {
+    const radiusKm = worker.serviceRadiusKm!;
+    const latitude = worker.baseLatitude!;
+    const longitude = worker.baseLongitude!;
+    const latitudeDelta = radiusKm / 111.32;
+    const longitudeScale = Math.max(Math.cos(toRadians(latitude)), 0.01);
+    const longitudeDelta = radiusKm / (111.32 * longitudeScale);
+    const conditions: Prisma.ServiceRequestWhereInput[] = [
+      {
+        lat: { gte: latitude - latitudeDelta, lte: latitude + latitudeDelta },
+        lng: { gte: longitude - longitudeDelta, lte: longitude + longitudeDelta },
+      },
+      noLocation,
+    ];
+    if (cities.length > 0) {
+      conditions.push({
+        lat: null,
+        lng: null,
+        serviceCity: { in: cities, mode: 'insensitive' },
+      });
+    }
+    return { OR: conditions };
+  }
+
+  if (cities.length > 0) {
+    return {
+      OR: [
+        { serviceCity: { in: cities, mode: 'insensitive' } },
+        noLocation,
+      ],
+    };
+  }
+
+  return null;
 }
 
 export function workerMatchesServiceArea(
@@ -177,6 +226,11 @@ function assertBasicWorkerEligibility(worker: EligibleWorker | null, request: Ma
   }
 }
 
+export function assertWorkerEligibleForRequestVisibility(worker: EligibleWorker | null, request: MatchRequest) {
+  assertBasicWorkerEligibility(worker, request);
+  return worker!;
+}
+
 export function assertWorkerCanSubmitOffer(access: WorkerAcceptanceAccess) {
   if (!access.canAcceptMoreRequests) {
     throw apiError(
@@ -245,11 +299,13 @@ export function buildIncomingRequestWhereFromWorker(
   const categoryIds = worker.categories.map(item => item.categoryId);
   if (categoryIds.length === 0) return null;
 
+  const serviceArea = buildServiceAreaWhereFromWorker(worker);
   return {
     status: 'PENDING',
     workerId: null,
     customerId: { not: userId },
     categoryId: { in: categoryIds },
+    ...(serviceArea ?? {}),
   };
 }
 

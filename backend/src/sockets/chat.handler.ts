@@ -1,90 +1,96 @@
 import { Server, Socket } from 'socket.io';
-import { db } from '../config/database';
+import { messageRequestIdSchema, socketMessageSchema } from '../modules/messages/messages.schema';
+import { assertMessageAccess, sendMessage } from '../modules/messages/messages.service';
 
-export function registerChatHandlers(io: Server, socket: Socket) {
+const MESSAGE_WINDOW_MS = 10_000;
+const MAX_MESSAGES_PER_WINDOW = 20;
+
+function emitChatError(socket: Socket, code: string, message: string) {
+  socket.emit('chat:error', { code, message });
+}
+
+function createMessageRateLimiter() {
+  let timestamps: number[] = [];
+
+  return () => {
+    const cutoff = Date.now() - MESSAGE_WINDOW_MS;
+    timestamps = timestamps.filter(timestamp => timestamp > cutoff);
+    if (timestamps.length >= MAX_MESSAGES_PER_WINDOW) return false;
+    timestamps.push(Date.now());
+    return true;
+  };
+}
+
+export function registerChatHandlers(_io: Server, socket: Socket) {
   const userId = socket.data.userId as string;
+  const allowMessage = createMessageRateLimiter();
 
-  // Join a request-specific chat room
-  socket.on('chat:join', async (requestId: string) => {
-    // Verify the user is a participant
-    const request = await db.serviceRequest.findUnique({
-      where: { id: requestId },
-      include: { worker: true },
-    });
-
-    if (!request) {
-      socket.emit('chat:error', { message: 'Request not found' });
+  socket.on('chat:join', async (rawRequestId: unknown) => {
+    const parsed = messageRequestIdSchema.safeParse(rawRequestId);
+    if (!parsed.success) {
+      emitChatError(socket, 'INVALID_REQUEST_ID', 'Invalid request');
       return;
     }
 
-    const isCustomer = request.customerId === userId;
-    const isWorker = request.worker?.userId === userId;
+    try {
+      await assertMessageAccess(parsed.data, userId);
+      await socket.join(`chat:${parsed.data}`);
+      socket.emit('chat:joined', { requestId: parsed.data });
+    } catch (error) {
+      const status = typeof error === 'object' && error !== null && 'status' in error
+        ? Number(error.status)
+        : 500;
+      emitChatError(
+        socket,
+        status === 404 ? 'REQUEST_NOT_FOUND' : 'CHAT_FORBIDDEN',
+        status === 404 ? 'Request not found' : 'Not a participant in this conversation',
+      );
+    }
+  });
 
-    if (!isCustomer && !isWorker) {
-      socket.emit('chat:error', { message: 'Not a participant in this conversation' });
+  socket.on('chat:message', async (rawPayload: unknown) => {
+    if (!allowMessage()) {
+      emitChatError(socket, 'MESSAGE_RATE_LIMITED', 'Too many messages. Please wait a moment.');
       return;
     }
 
-    socket.join(`chat:${requestId}`);
-    socket.emit('chat:joined', { requestId });
-  });
-
-  // Send a message via socket (persists to DB + broadcasts)
-  socket.on('chat:message', async (payload: { requestId: string; content: string }) => {
-    const { requestId, content } = payload;
-
-    if (!content?.trim()) {
-      socket.emit('chat:error', { message: 'Message content cannot be empty' });
+    const parsed = socketMessageSchema.safeParse(rawPayload);
+    if (!parsed.success) {
+      emitChatError(socket, 'INVALID_MESSAGE', 'Message must contain 1 to 2000 characters.');
       return;
     }
 
-    // Only participants can send
-    const request = await db.serviceRequest.findUnique({
-      where: { id: requestId },
-      include: { worker: true },
-    });
-
-    if (!request) {
-      socket.emit('chat:error', { message: 'Request not found' });
-      return;
+    try {
+      await sendMessage(parsed.data.requestId, userId, parsed.data.content);
+    } catch (error) {
+      const status = typeof error === 'object' && error !== null && 'status' in error
+        ? Number(error.status)
+        : 500;
+      emitChatError(
+        socket,
+        status === 404 ? 'REQUEST_NOT_FOUND' : status === 403 ? 'CHAT_FORBIDDEN' : 'MESSAGE_FAILED',
+        status === 404
+          ? 'Request not found'
+          : status === 403
+            ? 'Not a participant in this conversation'
+            : 'Could not send message',
+      );
     }
-
-    const isCustomer = request.customerId === userId;
-    const isWorker = request.worker?.userId === userId;
-
-    if (!isCustomer && !isWorker) {
-      socket.emit('chat:error', { message: 'Not a participant' });
-      return;
-    }
-
-    // Persist to database
-    const message = await db.message.create({
-      data: { requestId, senderId: userId, content: content.trim() },
-      select: {
-        id: true,
-        content: true,
-        isRead: true,
-        createdAt: true,
-        sender: { select: { id: true, fullName: true, avatarUrl: true, role: true } },
-      },
-    });
-
-    // Broadcast to all room members (including sender)
-    io.to(`chat:${requestId}`).emit('chat:message', { requestId, message });
   });
 
-  // Leave chat room
-  socket.on('chat:leave', (requestId: string) => {
-    socket.leave(`chat:${requestId}`);
-    socket.emit('chat:left', { requestId });
+  socket.on('chat:leave', async (rawRequestId: unknown) => {
+    const parsed = messageRequestIdSchema.safeParse(rawRequestId);
+    if (!parsed.success) return;
+    await socket.leave(`chat:${parsed.data}`);
+    socket.emit('chat:left', { requestId: parsed.data });
   });
 
-  // Typing indicator (fire-and-forget, no DB)
-  socket.on('chat:typing', (requestId: string) => {
-    socket.to(`chat:${requestId}`).emit('chat:typing', { userId, requestId });
-  });
+  const emitTyping = (event: 'chat:typing' | 'chat:stop-typing', rawRequestId: unknown) => {
+    const parsed = messageRequestIdSchema.safeParse(rawRequestId);
+    if (!parsed.success || !socket.rooms.has(`chat:${parsed.data}`)) return;
+    socket.to(`chat:${parsed.data}`).emit(event, { userId, requestId: parsed.data });
+  };
 
-  socket.on('chat:stop-typing', (requestId: string) => {
-    socket.to(`chat:${requestId}`).emit('chat:stop-typing', { userId, requestId });
-  });
+  socket.on('chat:typing', rawRequestId => emitTyping('chat:typing', rawRequestId));
+  socket.on('chat:stop-typing', rawRequestId => emitTyping('chat:stop-typing', rawRequestId));
 }

@@ -5,6 +5,7 @@ import { validate } from '../../middlewares/validate';
 import {
   updateProfileSchema,
   changePasswordSchema,
+  requestHistorySchema,
 } from './users.schema';
 
 const router = Router();
@@ -17,6 +18,6 @@ router.put('/profile', validate(updateProfileSchema), controller.updateProfile);
 router.put('/change-password', validate(changePasswordSchema), controller.changePassword);
 
 // Request history (all roles)
-router.get('/history', controller.getHistory);
+router.get('/history', validate(requestHistorySchema), controller.getHistory);
 
 export default router;

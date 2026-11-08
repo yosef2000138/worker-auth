@@ -7,7 +7,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     const data = await service.listNotifications(req.user!.sub, {
       page: Number(req.query.page ?? 1),
       limit: Number(req.query.limit ?? 20),
-      unreadOnly: req.query.unreadOnly === 'true',
+      unreadOnly: (req.query as Record<string, unknown>).unreadOnly === true,
     });
     res.json({ success: true, data });
   } catch (err) {

@@ -132,26 +132,82 @@ export async function searchWorkers(query: {
 }
 
 type WorkerProfileViewer = { id: string; role: string };
+type WorkerProfileAccess = 'PRIVATE' | 'ASSIGNED_CUSTOMER' | 'PUBLIC';
 
-export async function assertCanViewWorkerProfile(workerId: string, viewer: WorkerProfileViewer, workerUserId: string) {
-  if (viewer.role === 'ADMIN') return;
-  if (viewer.role === 'WORKER' && workerUserId === viewer.id) return;
+export async function getWorkerProfileAccess(
+  workerId: string,
+  viewer: WorkerProfileViewer,
+  workerUserId: string,
+): Promise<WorkerProfileAccess> {
+  if (viewer.role === 'ADMIN') return 'PRIVATE';
+  if (viewer.role === 'WORKER' && workerUserId === viewer.id) return 'PRIVATE';
 
   if (viewer.role === 'CUSTOMER') {
-    const relatedRequest = await db.serviceRequest.findFirst({
+    const assignedRequest = await db.serviceRequest.findFirst({
       where: {
         customerId: viewer.id,
-        OR: [
-          { workerId },
-          { offers: { some: { workerId } } },
-        ],
+        workerId,
       },
       select: { id: true },
     });
-    if (relatedRequest) return;
+    if (assignedRequest) return 'ASSIGNED_CUSTOMER';
+
+    const relatedOffer = await db.requestOffer.findFirst({
+      where: {
+        workerId,
+        request: { customerId: viewer.id },
+      },
+      select: { id: true },
+    });
+    if (relatedOffer) return 'PUBLIC';
   }
 
   throw { status: 403, code: 'WORKER_PROFILE_NOT_ACCESSIBLE', message: 'Worker profile is available only after an offer or assignment' };
+}
+
+export function toPublicWorkerProfile<T extends {
+  baseLatitude: unknown;
+  baseLongitude: unknown;
+  user: { id: string; fullName: string; avatarUrl: string | null };
+}>(worker: T) {
+  const {
+    baseLatitude: _baseLatitude,
+    baseLongitude: _baseLongitude,
+    user,
+    ...publicWorker
+  } = worker;
+
+  return {
+    ...publicWorker,
+    user: {
+      id: user.id,
+      fullName: user.fullName,
+      avatarUrl: user.avatarUrl,
+    },
+  };
+}
+
+export function toAssignedCustomerWorkerProfile<T extends {
+  baseLatitude: unknown;
+  baseLongitude: unknown;
+  user: { id: string; fullName: string; email: string; phone: string | null; avatarUrl: string | null };
+}>(worker: T) {
+  const {
+    baseLatitude: _baseLatitude,
+    baseLongitude: _baseLongitude,
+    user,
+    ...customerWorker
+  } = worker;
+
+  return {
+    ...customerWorker,
+    user: {
+      id: user.id,
+      fullName: user.fullName,
+      phone: user.phone,
+      avatarUrl: user.avatarUrl,
+    },
+  };
 }
 
 // ─── Get one worker (relationship-scoped profile) ────────────────────────────
@@ -161,8 +217,10 @@ export async function getWorker(id: string, viewer: WorkerProfileViewer) {
     select: workerSelect,
   });
   if (!worker) throw { status: 404, message: 'Worker not found' };
-  await assertCanViewWorkerProfile(id, viewer, worker.user.id);
-  return worker;
+  const access = await getWorkerProfileAccess(id, viewer, worker.user.id);
+  if (access === 'PRIVATE') return worker;
+  if (access === 'ASSIGNED_CUSTOMER') return toAssignedCustomerWorkerProfile(worker);
+  return toPublicWorkerProfile(worker);
 }
 
 // ─── Get own worker profile ───────────────────────────────────────────────────

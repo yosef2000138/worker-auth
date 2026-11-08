@@ -539,7 +539,7 @@ export function openExternalNavigation({
   const encoded = encodeURIComponent(query);
   const url = lat != null && lng != null
     ? Platform.select({
-      ios: `http://maps.apple.com/?ll=${lat},${lng}`,
+      ios: `https://maps.apple.com/?ll=${lat},${lng}`,
       android: `geo:${lat},${lng}?q=${encoded}`,
       default: `https://www.google.com/maps/search/?api=1&query=${encoded}`,
     })

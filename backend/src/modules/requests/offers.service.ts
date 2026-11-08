@@ -3,12 +3,15 @@ import { db } from '../../config/database';
 import { env } from '../../config/env';
 import { getIO } from '../../sockets';
 import { dispatchNotification } from '../../jobs/notificationJob';
+import { runSerializableTransaction } from '../../utils/prismaTransaction';
 import { getWorkerAcceptanceAccess, WorkerAcceptanceAccess } from '../subscriptions/subscriptions.service';
 import { CreateOfferInput, SendOfferMessageInput } from './requests.schema';
 import {
   ACTIVE_OFFER_STATUSES,
   addOfferMetaToRequests,
+  assertWorkerEligibleForRequestVisibility,
   assertWorkerEligibleForRequest,
+  eligibleWorkerSelect,
 } from './requestMatching.service';
 import { requestSelect, serializeRequestForViewer } from './requestPrivacy';
 
@@ -58,7 +61,7 @@ function canMessage(status: RequestOfferStatus) {
   return status === 'SUBMITTED' || status === 'DISCUSSING' || status === 'SELECTED';
 }
 
-async function lockRequestOfferSlot(tx: Prisma.TransactionClient, requestId: string) {
+export async function lockRequestOfferSlot(tx: Prisma.TransactionClient, requestId: string) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${requestId}))`;
 }
 
@@ -73,7 +76,18 @@ function emitToUser(userId: string, event: string, payload: unknown) {
 export async function listOffers(requestId: string, userId: string, role: ActorRole) {
   const request = await db.serviceRequest.findUnique({
     where: { id: requestId },
-    select: { id: true, customerId: true, status: true, workerId: true },
+    select: {
+      id: true,
+      customerId: true,
+      categoryId: true,
+      status: true,
+      workerId: true,
+      scheduledAt: true,
+      lat: true,
+      lng: true,
+      address: true,
+      serviceCity: true,
+    },
   });
   if (!request) throw apiError(404, 'REQUEST_NOT_FOUND', 'Request not found');
 
@@ -96,13 +110,20 @@ export async function listOffers(requestId: string, userId: string, role: ActorR
   }
 
   if (role === 'WORKER') {
-    const worker = await db.worker.findUnique({ where: { userId }, select: { id: true } });
+    const worker = await db.worker.findUnique({ where: { userId }, select: eligibleWorkerSelect });
     if (!worker) throw apiError(404, 'WORKER_PROFILE_NOT_FOUND', 'Worker profile not found');
     const offers = await db.requestOffer.findMany({
       where: { requestId, workerId: worker.id },
       select: offerSelect,
       orderBy: { createdAt: 'asc' },
     });
+    const isAssignedWorker = request.workerId === worker.id;
+    if (!isAssignedWorker && offers.length === 0) {
+      if (request.status !== 'PENDING' || request.workerId) {
+        throw apiError(403, 'OFFERS_NOT_ACCESSIBLE', 'You cannot access offers for this request');
+      }
+      assertWorkerEligibleForRequestVisibility(worker, request);
+    }
     const activeCount = await db.requestOffer.count({
       where: { requestId, status: { in: ACTIVE_OFFER_STATUSES } },
     });
@@ -119,7 +140,7 @@ export async function listOffers(requestId: string, userId: string, role: ActorR
 
 export async function createOffer(requestId: string, userId: string, input: CreateOfferInput) {
   try {
-    const result = await db.$transaction(async (tx) => {
+    const result = await runSerializableTransaction(async (tx) => {
       await lockRequestOfferSlot(tx, requestId);
 
       const request = await tx.serviceRequest.findUnique({
@@ -175,7 +196,7 @@ export async function createOffer(requestId: string, userId: string, input: Crea
       });
 
       return { offer, customerId: request.customerId, workerAccess: access };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    });
 
     dispatchNotification({
       userId: result.customerId,
@@ -194,8 +215,12 @@ export async function createOffer(requestId: string, userId: string, input: Crea
   }
 }
 
-async function getOfferForAccess(requestId: string, offerId: string) {
-  const offer = await db.requestOffer.findUnique({
+async function getOfferForAccess(
+  requestId: string,
+  offerId: string,
+  client: Prisma.TransactionClient | typeof db = db,
+) {
+  const offer = await client.requestOffer.findUnique({
     where: { id: offerId },
     include: {
       request: { select: { id: true, customerId: true, status: true, workerId: true } },
@@ -251,13 +276,14 @@ export async function sendOfferMessage(
   userId: string,
   input: SendOfferMessageInput,
 ) {
-  const offer = await getOfferForAccess(requestId, offerId);
-  const participant = assertOfferParticipant(offer, userId);
-  if (offer.request.status === 'CANCELLED' || !canMessage(offer.status)) {
-    throw apiError(423, 'OFFER_CONVERSATION_CLOSED', 'This offer conversation is closed');
-  }
+  const result = await runSerializableTransaction(async (tx) => {
+    await lockRequestOfferSlot(tx, requestId);
+    const offer = await getOfferForAccess(requestId, offerId, tx);
+    const participant = assertOfferParticipant(offer, userId);
+    if (offer.request.status === 'CANCELLED' || !canMessage(offer.status)) {
+      throw apiError(423, 'OFFER_CONVERSATION_CLOSED', 'This offer conversation is closed');
+    }
 
-  const message = await db.$transaction(async (tx) => {
     if (offer.status === 'SUBMITTED') {
       await tx.requestOffer.update({
         where: { id: offerId },
@@ -265,48 +291,58 @@ export async function sendOfferMessage(
       });
     }
 
-    return tx.offerMessage.create({
+    const message = await tx.offerMessage.create({
       data: { offerId, senderId: userId, content: input.content },
       select: offerMessageSelect,
     });
+    const recipientId = participant.isCustomer ? offer.worker.userId : offer.request.customerId;
+    return { message, recipientId };
   });
 
-  const recipientId = participant.isCustomer ? offer.worker.userId : offer.request.customerId;
   dispatchNotification({
-    userId: recipientId,
+    userId: result.recipientId,
     type: 'NEW_OFFER_MESSAGE',
     title: 'New offer message',
     body: 'You have a new private message about an offer.',
     data: { requestId, offerId },
   }).catch(() => {});
-  emitToUser(recipientId, 'request.offer.message.created', { requestId, offerId, message });
-  return message;
+  emitToUser(result.recipientId, 'request.offer.message.created', { requestId, offerId, message: result.message });
+  return result.message;
 }
 
 export async function withdrawOffer(requestId: string, offerId: string, userId: string) {
-  const offer = await getOfferForAccess(requestId, offerId);
-  if (offer.worker.userId !== userId) {
-    throw apiError(403, 'OFFER_NOT_ACCESSIBLE', 'You cannot withdraw this offer');
-  }
-  if (!ACTIVE_OFFER_STATUSES.includes(offer.status)) {
-    throw apiError(409, 'OFFER_CANNOT_BE_WITHDRAWN', 'This offer can no longer be withdrawn');
-  }
+  const result = await runSerializableTransaction(async tx => {
+    await lockRequestOfferSlot(tx, requestId);
+    const offer = await getOfferForAccess(requestId, offerId, tx);
+    if (offer.worker.userId !== userId) {
+      throw apiError(403, 'OFFER_NOT_ACCESSIBLE', 'You cannot withdraw this offer');
+    }
+    if (!ACTIVE_OFFER_STATUSES.includes(offer.status)) {
+      throw apiError(409, 'OFFER_CANNOT_BE_WITHDRAWN', 'This offer can no longer be withdrawn');
+    }
 
-  const updated = await db.requestOffer.update({
-    where: { id: offerId },
-    data: { status: 'WITHDRAWN' },
-    select: offerSelect,
+    const changed = await tx.requestOffer.updateMany({
+      where: { id: offerId, requestId, status: { in: ACTIVE_OFFER_STATUSES } },
+      data: { status: 'WITHDRAWN' },
+    });
+    if (changed.count !== 1) {
+      throw apiError(409, 'OFFER_CANNOT_BE_WITHDRAWN', 'This offer can no longer be withdrawn');
+    }
+
+    const updated = await tx.requestOffer.findUnique({ where: { id: offerId }, select: offerSelect });
+    if (!updated) throw apiError(404, 'OFFER_NOT_FOUND', 'Offer not found');
+    return { updated, customerId: offer.request.customerId };
   });
 
   dispatchNotification({
-    userId: offer.request.customerId,
+    userId: result.customerId,
     type: 'OFFER_WITHDRAWN',
     title: 'Offer withdrawn',
     body: 'A worker withdrew their offer.',
     data: { requestId, offerId },
   }).catch(() => {});
-  emitToUser(offer.request.customerId, 'request.offer.withdrawn', updated);
-  return updated;
+  emitToUser(result.customerId, 'request.offer.withdrawn', result.updated);
+  return result.updated;
 }
 
 export type ConfirmOfferResult = {
@@ -316,7 +352,7 @@ export type ConfirmOfferResult = {
 };
 
 export async function confirmOffer(requestId: string, offerId: string, customerId: string): Promise<ConfirmOfferResult> {
-  const result = await db.$transaction(async (tx) => {
+  const result = await runSerializableTransaction(async (tx) => {
     await lockRequestOfferSlot(tx, requestId);
 
     const request = await tx.serviceRequest.findUnique({
@@ -418,7 +454,7 @@ export async function confirmOffer(requestId: string, offerId: string, customerI
       selectedWorkerUserId: offer.worker.userId,
       notSelectedUserIds: notSelected.map(item => item.worker.userId),
     };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  });
 
   dispatchNotification({
     userId: result.selectedWorkerUserId,
@@ -449,8 +485,13 @@ export async function confirmOffer(requestId: string, offerId: string, customerI
   };
 }
 
-export async function closeOffersForCancelledRequest(requestId: string) {
-  const offers = await db.requestOffer.findMany({
+export type CancelledOfferRecipient = { id: string; worker: { userId: string } };
+
+export async function expireOffersForCancelledRequest(
+  tx: Prisma.TransactionClient,
+  requestId: string,
+): Promise<CancelledOfferRecipient[]> {
+  const offers = await tx.requestOffer.findMany({
     where: {
       requestId,
       status: { in: ACTIVE_OFFER_STATUSES },
@@ -458,7 +499,7 @@ export async function closeOffersForCancelledRequest(requestId: string) {
     select: { id: true, worker: { select: { userId: true } } },
   });
 
-  await db.requestOffer.updateMany({
+  await tx.requestOffer.updateMany({
     where: {
       requestId,
       status: { in: ACTIVE_OFFER_STATUSES },
@@ -466,6 +507,10 @@ export async function closeOffersForCancelledRequest(requestId: string) {
     data: { status: 'EXPIRED' },
   });
 
+  return offers;
+}
+
+export function notifyCancelledOfferRecipients(requestId: string, offers: CancelledOfferRecipient[]) {
   offers.forEach(offer => {
     dispatchNotification({
       userId: offer.worker.userId,

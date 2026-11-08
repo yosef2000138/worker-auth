@@ -2,7 +2,7 @@ import { db } from '../../config/database';
 import { getIO } from '../../sockets';
 
 // ─── Access guard: only customer or assigned worker can chat ─────────────────
-async function assertAccess(requestId: string, userId: string) {
+export async function assertMessageAccess(requestId: string, userId: string) {
   const request = await db.serviceRequest.findUnique({
     where: { id: requestId },
     include: { worker: true },
@@ -23,7 +23,7 @@ export async function listMessages(
   userId: string,
   options: { before?: string; limit: number },
 ) {
-  await assertAccess(requestId, userId);
+  await assertMessageAccess(requestId, userId);
 
   const { before, limit } = options;
 
@@ -54,7 +54,7 @@ export async function sendMessage(
   senderId: string,
   content: string,
 ) {
-  await assertAccess(requestId, senderId);
+  await assertMessageAccess(requestId, senderId);
 
   const message = await db.message.create({
     data: { requestId, senderId, content },
@@ -80,7 +80,7 @@ export async function sendMessage(
 
 // ─── Mark messages as read ────────────────────────────────────────────────────
 export async function markRead(requestId: string, userId: string) {
-  await assertAccess(requestId, userId);
+  await assertMessageAccess(requestId, userId);
 
   // Mark all messages NOT sent by this user as read
   const { count } = await db.message.updateMany({
