@@ -3,6 +3,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { findTestFiles, printTestFiles } from './test-files.mjs';
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const defaults = {
   NODE_ENV: 'test',
@@ -48,6 +50,8 @@ function run(command, args) {
 }
 
 assertIsolatedDatabase();
+const testFiles = findTestFiles(root, path.join('test', 'integration'));
+printTestFiles('integration', testFiles);
 const executable = process.platform === 'win32' ? '.cmd' : '';
 run(path.join(root, 'node_modules', '.bin', `tsc${executable}`), [
   '-p',
@@ -55,8 +59,10 @@ run(path.join(root, 'node_modules', '.bin', `tsc${executable}`), [
   '--noEmit',
 ]);
 run(path.join(root, 'node_modules', '.bin', `prisma${executable}`), ['migrate', 'deploy']);
-run(path.join(root, 'node_modules', '.bin', `tsx${executable}`), [
+run(process.execPath, [
+  '--import',
+  'tsx',
   '--test',
   '--test-concurrency=1',
-  'test/integration/**/*.test.ts',
+  ...testFiles,
 ]);

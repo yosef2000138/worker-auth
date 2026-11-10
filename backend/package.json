@@ -10,7 +10,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
-    "test": "tsx --test \"src/**/*.test.ts\"",
+    "test": "node scripts/run-unit-tests.mjs",
     "test:integration:typecheck": "tsc -p tsconfig.integration.json --noEmit",
     "test:integration": "node scripts/run-integration-tests.mjs",
     "test:integration:docker": "node scripts/run-integration-with-docker.mjs",
