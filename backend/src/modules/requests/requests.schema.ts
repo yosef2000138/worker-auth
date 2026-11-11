@@ -15,17 +15,17 @@ const optionalLongitude = z.preprocess(
 export const createRequestSchema = z.object({
   body: z.object({
     categoryId:    uuidSchema,
-    title:         z.string().min(5, 'Title too short').max(200).trim(),
-    description:   z.string().min(10, 'Description too short').max(2000).trim(),
+    title:         z.string().trim().min(5, 'Title too short').max(200),
+    description:   z.string().trim().min(10, 'Description too short').max(2000),
     lat:           optionalLatitude,
     lng:           optionalLongitude,
     address:       z.preprocess(
       emptyToUndefined,
-      z.string().min(5).max(500).trim().optional().nullable(),
+      z.string().trim().min(5).max(500).optional().nullable(),
     ),
     serviceCity:   z.preprocess(
       emptyToUndefined,
-      z.string().min(1).max(100).trim().optional().nullable(),
+      z.string().trim().min(1).max(100).optional().nullable(),
     ),
     scheduledAt:   z.string().datetime().optional(),
     paymentMethod: z.enum(['ONLINE', 'CASH']).default('CASH'),
@@ -47,13 +47,13 @@ export const createRequestSchema = z.object({
 });
 
 export const updateStatusSchema = z.object({
-  params: z.object({ id: uuidSchema }),
+  params: z.object({ id: uuidSchema }).strict(),
   body: z.object({
     status: z.enum([
       'ACCEPTED', 'ON_THE_WAY', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED',
     ]),
     cancellationReason: z.string().max(500).optional(),
-  }),
+  }).strict(),
 });
 
 export const listRequestsSchema = z.object({
@@ -63,36 +63,36 @@ export const listRequestsSchema = z.object({
       .optional(),
     page:  z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(50).default(10),
-  }),
+  }).strict(),
 });
 
 export const idParamSchema = z.object({
-  params: z.object({ id: uuidSchema }),
+  params: z.object({ id: uuidSchema }).strict(),
 });
 
 export const requestIdParamSchema = z.object({
-  params: z.object({ requestId: uuidSchema }),
+  params: z.object({ requestId: uuidSchema }).strict(),
 });
 
 export const cancelSchema = z.object({
-  params: z.object({ id: uuidSchema }),
+  params: z.object({ id: uuidSchema }).strict(),
   body: z.object({
     reason: z.string().max(500).optional(),
-  }),
+  }).strict(),
 });
 
 export const createRequestReviewSchema = z.object({
-  params: z.object({ id: uuidSchema }),
+  params: z.object({ id: uuidSchema }).strict(),
   body: z.object({
     rating: z.number().int().min(1).max(5),
-    comment: z.string().max(1000).trim().optional(),
-  }),
+    comment: z.string().trim().max(1000).optional(),
+  }).strict(),
 });
 
 export const createOfferSchema = z.object({
   params: z.object({ requestId: uuidSchema }),
   body: z.object({
-    proposedPrice: z.coerce.number({ invalid_type_error: 'Enter a valid price.' })
+    proposedPrice: z.coerce.number({ error: 'Enter a valid price.' })
       .positive('Enter a price greater than zero.')
       .max(100000, 'Enter a lower price.'),
     message: z.preprocess(
@@ -102,7 +102,7 @@ export const createOfferSchema = z.object({
     availableAt: z.string()
       .datetime('Choose a valid available date and time.')
       .refine(value => new Date(value).getTime() > Date.now(), 'The selected time must be in the future.'),
-    estimatedDuration: z.coerce.number({ invalid_type_error: 'Enter a valid duration.' })
+    estimatedDuration: z.coerce.number({ error: 'Enter a valid duration.' })
       .int('Enter a whole number of minutes.')
       .positive('Enter a duration greater than zero.')
       .max(60 * 24 * 30, 'Enter a shorter duration.'),
@@ -110,22 +110,22 @@ export const createOfferSchema = z.object({
 });
 
 export const offerParamSchema = z.object({
-  params: z.object({ requestId: uuidSchema, offerId: uuidSchema }),
+  params: z.object({ requestId: uuidSchema, offerId: uuidSchema }).strict(),
 });
 
 export const listOfferMessagesSchema = z.object({
-  params: z.object({ requestId: uuidSchema, offerId: uuidSchema }),
+  params: z.object({ requestId: uuidSchema, offerId: uuidSchema }).strict(),
   query: z.object({
     before: z.string().datetime().optional(),
     limit: z.coerce.number().int().min(1).max(100).default(50),
-  }),
+  }).strict(),
 });
 
 export const sendOfferMessageSchema = z.object({
-  params: z.object({ requestId: uuidSchema, offerId: uuidSchema }),
+  params: z.object({ requestId: uuidSchema, offerId: uuidSchema }).strict(),
   body: z.object({
-    content: z.string().min(1).max(2000).trim(),
-  }),
+    content: z.string().trim().min(1).max(2000),
+  }).strict(),
 });
 
 export type CreateOfferInput = z.infer<typeof createOfferSchema>['body'];

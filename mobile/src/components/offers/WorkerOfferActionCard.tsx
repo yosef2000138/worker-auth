@@ -404,6 +404,7 @@ export function WorkerOfferActionCard({
             <View style={styles.offerForm}>
               <Stack gap={spacing.sm}>
                 <Body weight="bold">{t('offers.makeOffer')}</Body>
+                <BodySm color={colors.textSecondary}>{t('offers.formHelper')}</BodySm>
                 <Field
                   label={t('offers.price')}
                   value={price}
@@ -421,10 +422,10 @@ export function WorkerOfferActionCard({
                   label={t('offers.duration')}
                   value={duration}
                   onChangeText={(value) => {
-                    setDuration(value);
+                    setDuration(value.replace(/[^\d]/g, ''));
                     setFieldErrors(current => ({ ...current, duration: undefined }));
                   }}
-                  keyboardType="decimal-pad"
+                  keyboardType="number-pad"
                   placeholder={t('offers.durationPlaceholder')}
                   leftIcon="time-outline"
                 />

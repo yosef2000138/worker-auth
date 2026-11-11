@@ -18,7 +18,7 @@ type ReviewEligibilityRequest = {
 
 type RatingDistribution = Record<'1' | '2' | '3' | '4' | '5', number>;
 
-const publicReviewSelect = {
+export const publicReviewSelect = {
   id: true,
   requestId: true,
   rating: true,
@@ -30,7 +30,6 @@ const publicReviewSelect = {
   request: {
     select: {
       id: true,
-      title: true,
       category: { select: { id: true, name: true, icon: true } },
     },
   },
@@ -326,7 +325,6 @@ export async function getWorkerReviews(
         request: {
           select: {
             id: true,
-            title: true,
             category: { select: { id: true, name: true, icon: true } },
           },
         },

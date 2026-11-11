@@ -87,10 +87,14 @@ export function serializeRequestForViewer<T extends RequestResponseShape>(
 
   return {
     ...request,
-    address: publicAreaFromAddress(request.address),
+    address: request.serviceCity ?? publicAreaFromAddress(request.address),
     lat: undefined,
     lng: undefined,
+    priceAgreed: undefined,
     customer: undefined,
+    worker: undefined,
+    review: undefined,
+    canReview: false,
   } as T;
 }
 

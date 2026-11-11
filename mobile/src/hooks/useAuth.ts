@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { authService, LoginPayload, RegisterPayload } from '@/services/authService';
+import { addSessionInvalidationHandler } from '@/services/api';
 import { useChatStore } from '@/store/chatStore';
 import { useAuthStore } from '@/store/authStore';
 import { useNotificationStore } from '@/store/notificationStore';
@@ -11,12 +12,14 @@ export function useAuth() {
   const { user, hydrated, setAuth, logoutLocal, setHydrated } = useAuthStore();
   const queryClient = useQueryClient();
 
-  const resetSessionState = async () => {
+  const resetSessionState = useCallback(async () => {
     await queryClient.cancelQueries();
     useChatStore.getState().reset();
     useNotificationStore.getState().reset();
     queryClient.clear();
-  };
+  }, [queryClient]);
+
+  useEffect(() => addSessionInvalidationHandler(resetSessionState), [resetSessionState]);
 
   useEffect(() => {
     if (hydrated || authHydrationStarted) return;

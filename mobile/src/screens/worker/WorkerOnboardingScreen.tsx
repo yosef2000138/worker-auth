@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
+import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -23,6 +24,20 @@ import { useAuth } from '@/hooks/useAuth';
 import { Category, WorkerProfile } from '@/types';
 import { isWorkerProfileComplete, workerCategoryIds, workerProfileMissingItemKeys } from '@/utils/workerProfile';
 import { queryKeys } from '@/utils/queryKeys';
+
+const secureDraftOptions = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
+
+async function loadPrivateDraft(key: string) {
+  const encryptedDraft = await SecureStore.getItemAsync(key);
+  if (encryptedDraft) return encryptedDraft;
+
+  const legacyDraft = await AsyncStorage.getItem(key);
+  if (!legacyDraft) return null;
+
+  await SecureStore.setItemAsync(key, legacyDraft, secureDraftOptions);
+  await AsyncStorage.removeItem(key);
+  return legacyDraft;
+}
 
 type Props = {
   initialWorker?: WorkerProfile;
@@ -136,7 +151,7 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
 
   useEffect(() => {
     let mounted = true;
-    AsyncStorage.getItem(draftKey)
+    loadPrivateDraft(draftKey)
       .then(raw => {
         if (!mounted || !raw) return;
         const draft = JSON.parse(raw) as Draft;
@@ -196,7 +211,7 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
   useEffect(() => {
     if (!draftLoaded || success) return;
     const timer = setTimeout(() => {
-      AsyncStorage.setItem(draftKey, JSON.stringify(draft)).catch(() => undefined);
+      SecureStore.setItemAsync(draftKey, JSON.stringify(draft), secureDraftOptions).catch(() => undefined);
     }, 250);
     return () => clearTimeout(timer);
   }, [draft, draftKey, draftLoaded, success]);
@@ -222,7 +237,6 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
     if (primaryServiceCity.trim().length < 2) errors.push(t('validation.serviceCityRequired'));
     if (radius != null && (!Number.isFinite(radius) || radius < 1 || radius > 100)) errors.push(t('validation.serviceRadius'));
     if ((latitude == null) !== (longitude == null)) errors.push(t('validation.baseLocationPair'));
-    if (radius != null && (latitude == null || longitude == null)) errors.push(t('validation.radiusNeedsBaseLocation'));
     return errors;
   }, [baseLatitude, baseLongitude, primaryServiceCity, serviceRadiusKm, t]);
 
@@ -325,8 +339,13 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
       await workerService.setCategories(categoryIds);
       await workerService.setAvailability(days.map(dayOfWeek => ({ dayOfWeek, startTime, endTime })));
       await workerService.toggleAvailability(isAvailable);
-      await AsyncStorage.setItem(`${draftKey}_local_details`, JSON.stringify({ portfolioPlaceholders, verificationReady, certificateNote }));
-      await AsyncStorage.removeItem(draftKey);
+      const localDetailsKey = `${draftKey}_local_details`;
+      await SecureStore.setItemAsync(localDetailsKey, JSON.stringify({ portfolioPlaceholders, verificationReady, certificateNote }), secureDraftOptions).catch(() => undefined);
+      await AsyncStorage.removeItem(localDetailsKey).catch(() => undefined);
+      await Promise.all([
+        SecureStore.deleteItemAsync(draftKey),
+        AsyncStorage.removeItem(draftKey),
+      ]);
 
       setUser(updatedUser);
       const latestWorker = await workerService.me();
@@ -340,7 +359,7 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
       setSuccess(true);
       setTimeout(() => onComplete?.(), 950);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('worker.onboarding.saveFailed'));
+      setError(t('worker.onboarding.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -415,6 +434,9 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
             <AuthInput label={t('worker.onboarding.city')} value={primaryServiceCity} onChangeText={setPrimaryServiceCity} placeholder={t('worker.onboarding.cityPlaceholder')} leftIcon="business-outline" />
             <AuthInput label={t('worker.onboarding.additionalCities')} value={additionalServiceCities} onChangeText={setAdditionalServiceCities} placeholder={t('worker.onboarding.additionalCitiesPlaceholder')} leftIcon="map-outline" />
             <AuthInput label={t('worker.onboarding.workingRadius')} value={serviceRadiusKm} onChangeText={setServiceRadiusKm} placeholder="20" keyboardType="numeric" leftIcon="navigate-outline" />
+            {serviceRadiusKm.trim() && !(baseLatitude && baseLongitude) ? (
+              <Text style={[styles.note, isRTL && styles.rtlText]}>{t('worker.onboarding.radiusNeedsLocationInfo')}</Text>
+            ) : null}
             <AuthButton title={baseLatitude && baseLongitude ? t('worker.onboarding.updateCurrentLocation') : t('worker.onboarding.useCurrentLocation')} variant="secondary" icon="location-outline" loading={locationLoading} onPress={handleCurrentLocation} />
             {baseLatitude && baseLongitude ? <Text style={[styles.note, isRTL && styles.rtlText]}>{t('worker.onboarding.baseLocationSaved', { lat: baseLatitude, lng: baseLongitude })}</Text> : null}
           </View>
@@ -466,10 +488,29 @@ export default function WorkerOnboardingScreen({ initialWorker, onComplete }: Pr
 
         {step === 6 ? (
           <View style={styles.step}>
-            <Text style={[styles.stepTitle, isRTL && styles.rtlText]}>{t('worker.onboarding.verification')}</Text>
-            <AuthBanner tone="info" title={t('common.todo')} message={t('worker.onboarding.verificationTodo')} />
-            <CheckRow checked={verificationReady} label={t('worker.onboarding.verificationReady')} onPress={() => setVerificationReady(current => !current)} />
-            <AuthInput label={t('worker.onboarding.certificateNote')} value={certificateNote} onChangeText={setCertificateNote} placeholder={t('worker.onboarding.certificatePlaceholder')} multiline leftIcon="document-text-outline" />
+            <Text style={[styles.stepTitleCompact, isRTL && styles.rtlText]}>{t('worker.onboarding.verificationOptional')}</Text>
+            <View style={styles.verificationCard}>
+              <View style={[styles.verificationIconWrap, isRTL && styles.rowReverse]}>
+                <View style={styles.verificationIcon}>
+                  <Ionicons name="shield-checkmark-outline" size={22} color={authPalette.brand} />
+                </View>
+                <Text style={[styles.verificationLead, isRTL && styles.rtlText]}>{t('worker.onboarding.verificationSoon')}</Text>
+              </View>
+              <Text style={[styles.verificationBody, isRTL && styles.rtlText]}>{t('worker.onboarding.verificationFinishNow')}</Text>
+              <Text style={[styles.verificationBody, isRTL && styles.rtlText]}>{t('worker.onboarding.verificationLater')}</Text>
+              <View style={styles.verificationList}>
+                {[
+                  t('worker.onboarding.verificationItemId'),
+                  t('worker.onboarding.verificationItemCertificates'),
+                  t('worker.onboarding.verificationItemLicenses'),
+                ].map(item => (
+                  <View key={item} style={[styles.bulletRow, isRTL && styles.rowReverse]}>
+                    <View style={styles.bulletDot} />
+                    <Text style={[styles.bulletText, isRTL && styles.rtlText]}>{item}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
           </View>
         ) : null}
 
@@ -511,6 +552,7 @@ const styles = StyleSheet.create({
   },
   step: { gap: 14 },
   stepTitle: { color: authPalette.ink, fontSize: 19, fontWeight: '900' },
+  stepTitleCompact: { color: authPalette.ink, fontSize: 17, lineHeight: 23, fontWeight: '900' },
   twoCol: { flexDirection: 'row', gap: 10 },
   flexItem: { flex: 1 },
   note: { color: authPalette.muted, fontSize: 13, lineHeight: 19, fontWeight: '600' },
@@ -528,6 +570,15 @@ const styles = StyleSheet.create({
   placeholderGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   placeholderCard: { width: '47%', minHeight: 92, borderRadius: 18, borderWidth: 1, borderStyle: 'dashed', borderColor: authPalette.lineStrong, alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#FCFCFD' },
   placeholderText: { color: authPalette.muted, fontSize: 12, fontWeight: '800' },
+  verificationCard: { borderRadius: 18, borderWidth: 1, borderColor: authPalette.line, backgroundColor: '#F9FAFB', padding: 16, gap: 10 },
+  verificationIconWrap: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  verificationIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EAF1FF' },
+  verificationLead: { flex: 1, color: authPalette.ink, fontSize: 15, lineHeight: 21, fontWeight: '900' },
+  verificationBody: { color: authPalette.muted, fontSize: 13, lineHeight: 20, fontWeight: '600' },
+  verificationList: { gap: 8, marginTop: 2 },
+  bulletRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  bulletDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: authPalette.brand },
+  bulletText: { color: authPalette.ink, fontSize: 13, lineHeight: 18, fontWeight: '800' },
   footer: { flexDirection: 'row', gap: 10 },
   footerButton: { flex: 1 },
   successCard: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },

@@ -127,6 +127,7 @@ export function Button({
         isOutline && styles.buttonOutline,
         isGhost && styles.buttonGhost,
         isDanger && !isGhost && !isOutline && styles.buttonDanger,
+        disabled && styles.buttonDisabled,
         pressed && { opacity: 0.78 },
         style,
       ]}
@@ -208,6 +209,71 @@ export function Badge({ label, tone = 'neutral' }: { label: string; tone?: 'neut
   return <Text style={[styles.badge, { backgroundColor: palette.bg, color: palette.fg }]}>{copy(label)}</Text>;
 }
 
+export function SectionHeader({
+  title,
+  subtitle,
+  action,
+}: {
+  title: string;
+  subtitle?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <Row justify="space-between" align="flex-start" gap={spacing.md}>
+      <Stack gap={spacing.xs} style={{ flex: 1 }}>
+        <H3>{title}</H3>
+        {subtitle ? <BodySm color={colors.textSecondary}>{subtitle}</BodySm> : null}
+      </Stack>
+      {action}
+    </Row>
+  );
+}
+
+export function InfoRow({
+  icon,
+  label,
+  value,
+}: {
+  icon?: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+}) {
+  return (
+    <Row gap={spacing.sm} align="flex-start">
+      {icon ? <Ionicons name={icon} size={18} color={colors.textTertiary} /> : null}
+      <Stack gap={2} style={{ flex: 1 }}>
+        <Caption>{label}</Caption>
+        <BodySm weight="semibold">{value}</BodySm>
+      </Stack>
+    </Row>
+  );
+}
+
+export function StatusPill({
+  label,
+  tone = 'neutral',
+  icon,
+}: {
+  label: string;
+  tone?: 'neutral' | 'brand' | 'success' | 'danger';
+  icon?: keyof typeof Ionicons.glyphMap;
+}) {
+  const { copy, isRTL } = useLanguage();
+  const palette = tone === 'success'
+    ? { bg: colors.successSoft, fg: colors.success }
+    : tone === 'brand'
+    ? { bg: colors.brandSoftest, fg: colors.brand }
+    : tone === 'danger'
+    ? { bg: colors.dangerSoft, fg: colors.danger }
+    : { bg: '#F1F5F9', fg: colors.textSecondary };
+  return (
+    <View style={[styles.statusPill, { backgroundColor: palette.bg, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+      {icon ? <Ionicons name={icon} size={14} color={palette.fg} /> : null}
+      <Text style={[styles.statusPillText, { color: palette.fg }]}>{copy(label)}</Text>
+    </View>
+  );
+}
+
 export function Banner({ tone = 'success', message }: { tone?: 'success' | 'danger' | 'warning'; message: string }) {
   const { copy } = useLanguage();
   const bg = tone === 'danger' ? colors.dangerSoft : tone === 'warning' ? colors.warningSoft : colors.successSoft;
@@ -284,12 +350,15 @@ const styles = StyleSheet.create({
   buttonOutline: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.border },
   buttonGhost: { backgroundColor: 'transparent', paddingHorizontal: spacing.sm },
   buttonDanger: { backgroundColor: colors.danger },
+  buttonDisabled: { opacity: 0.56 },
   buttonText: { fontWeight: fontWeight.bold, fontSize: fontSize.base },
   buttonTextSm: { fontSize: fontSize.sm },
   inputWrap: { minHeight: 46, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surface, paddingHorizontal: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   input: { flex: 1, fontSize: fontSize.base, color: colors.textPrimary, paddingVertical: spacing.sm },
   avatar: { backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   badge: { overflow: 'hidden', borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 4, fontSize: fontSize.xs, fontWeight: fontWeight.semibold },
+  statusPill: { alignSelf: 'flex-start', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 5 },
+  statusPillText: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold },
   banner: { overflow: 'hidden', borderRadius: radius.md, padding: spacing.md, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   divider: { height: 1, backgroundColor: colors.border },
   state: { flex: 1, minHeight: 240, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.sm },

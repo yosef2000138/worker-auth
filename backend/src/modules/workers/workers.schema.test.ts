@@ -42,6 +42,7 @@ test('invalid base longitude is rejected', () => {
   assert.throws(() => updateWorkerProfileSchema.parse({ body: { baseLatitude: 32, baseLongitude: 181 } }));
 });
 
-test('service radius requires base coordinates', () => {
-  assert.throws(() => updateWorkerProfileSchema.parse({ body: { serviceRadiusKm: 20 } }));
+test('service radius can be saved before base coordinates are added', () => {
+  const parsed = updateWorkerProfileSchema.parse({ body: { serviceRadiusKm: 20 } });
+  assert.equal(parsed.body.serviceRadiusKm, 20);
 });

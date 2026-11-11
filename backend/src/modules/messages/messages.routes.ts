@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as controller from './messages.controller';
 import { authenticate } from '../../middlewares/authenticate';
 import { validate } from '../../middlewares/validate';
+import { messageWriteLimiter } from '../../middlewares/rateLimiters';
 import {
   listMessagesSchema,
   sendMessageSchema,
@@ -17,7 +18,7 @@ router.get('/unread-count', controller.getUnreadCount);
 
 // Per-request conversation
 router.get('/:requestId', validate(listMessagesSchema), controller.listMessages);
-router.post('/:requestId', validate(sendMessageSchema), controller.sendMessage);
+router.post('/:requestId', messageWriteLimiter, validate(sendMessageSchema), controller.sendMessage);
 router.patch('/:requestId/read', validate(requestIdParamSchema), controller.markRead);
 
 export default router;

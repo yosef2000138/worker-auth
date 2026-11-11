@@ -8,6 +8,7 @@ import {
   buildWorkerReviewsWhere,
   mapReviewCreateError,
   normalizeReviewComment,
+  publicReviewSelect,
 } from './reviews.service';
 
 const params = { id: '11111111-1111-4111-8111-111111111111' };
@@ -190,4 +191,8 @@ test('empty review list returns average null and count zero', () => {
 
 test('worker reviews endpoint filters only reviews for that worker', () => {
   assert.deepEqual(buildWorkerReviewsWhere('worker-user-1'), { revieweeId: 'worker-user-1' });
+});
+
+test('public reviews do not expose user-entered request titles', () => {
+  assert.equal('title' in publicReviewSelect.request.select, false);
 });

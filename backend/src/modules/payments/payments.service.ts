@@ -16,7 +16,6 @@ const paymentSelect = {
   currency: true,
   method: true,
   status: true,
-  stripePaymentIntent: true,
   createdAt: true,
   request: {
     select: {
@@ -122,10 +121,19 @@ export async function recordCashPayment(
     throw { status: 422, message: 'Request must be completed first' };
   }
 
+  const agreedAmount = Number(request.priceAgreed ?? 0);
+  if (agreedAmount <= 0 || Math.abs(agreedAmount - amount) > 0.001) {
+    throw {
+      status: 422,
+      code: 'PAYMENT_AMOUNT_MISMATCH',
+      message: 'Cash payment must match the agreed request price',
+    };
+  }
+
   const payment = await db.payment.create({
     data: {
       requestId,
-      amount,
+      amount: agreedAmount,
       currency: 'usd',
       method: 'CASH',
       status: 'COMPLETED',

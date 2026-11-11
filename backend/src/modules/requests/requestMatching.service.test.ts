@@ -5,7 +5,9 @@ import { buildWorkerAcceptanceAccess } from '../subscriptions/subscriptions.serv
 import {
   ACTIVE_OFFER_STATUSES,
   buildIncomingRequestWhereFromWorker,
+  buildServiceAreaWhereFromWorker,
   assertWorkerCanSubmitOffer,
+  assertWorkerEligibleForRequestVisibility,
   isWorkerProfileCompleteForMatching,
   workerMatchesServiceArea,
   type EligibleWorker,
@@ -139,6 +141,23 @@ test('unrelated-category workers are excluded by the incoming category filter', 
   assert.equal(categoryFilter.in?.includes('electrical'), false);
 });
 
+test('offer metadata visibility uses matching rules without checking quota', () => {
+  const request = {
+    id: 'request-1',
+    customerId: 'customer-1',
+    categoryId: 'electrical',
+  };
+
+  assert.doesNotThrow(() => assertWorkerEligibleForRequestVisibility(baseWorker(), request));
+  assert.throws(
+    () => assertWorkerEligibleForRequestVisibility(
+      baseWorker({ categories: [{ categoryId: 'plumbing' }] }),
+      request,
+    ),
+    (error: unknown) => (error as { code?: string }).code === 'WORKER_CATEGORY_MISMATCH',
+  );
+});
+
 test('incoming request visibility does not require request location fields', () => {
   const worker = baseWorker();
 
@@ -193,4 +212,36 @@ test('request with city and coordinates prefers radius when available', () => {
     serviceRadiusKm: 10,
   });
   assert.equal(workerMatchesServiceArea(worker, { serviceCity: 'Jerusalem', lat: 31.7683, lng: 35.2137 }), false);
+});
+
+test('city matching is pushed into the database candidate query', () => {
+  const where = buildServiceAreaWhereFromWorker(baseWorker({
+    primaryServiceCity: 'Haifa',
+    additionalServiceCities: ['Acre'],
+  }));
+
+  assert.deepEqual(where, {
+    OR: [
+      { serviceCity: { in: ['haifa', 'acre'], mode: 'insensitive' } },
+      { lat: null, lng: null, serviceCity: null },
+    ],
+  });
+});
+
+test('radius matching uses a database bounding box before exact distance filtering', () => {
+  const where = buildServiceAreaWhereFromWorker(baseWorker({
+    baseLatitude: 32.794,
+    baseLongitude: 34.9896,
+    serviceRadiusKm: 10,
+  }));
+  const conditions = Array.isArray(where?.OR) ? where.OR : [];
+  const firstCondition = conditions[0] as {
+    lat: { gte: number; lte: number };
+    lng: { gte: number; lte: number };
+  };
+
+  assert.ok(firstCondition.lat.gte < 32.794);
+  assert.ok(firstCondition.lat.lte > 32.794);
+  assert.ok(firstCondition.lng.gte < 34.9896);
+  assert.ok(firstCondition.lng.lte > 34.9896);
 });

@@ -8,7 +8,7 @@ import { requestService } from '@/services/requestService';
 import { workerService } from '@/services/workerService';
 import { BackendSubscriptionResponse, backendSubscriptionQueryKey, getWorkerProPrice, subscriptionApi } from '@/features/subscriptions';
 import { useAuthStore } from '@/store/authStore';
-import { Avatar, Badge, Body, BodySm, Button, Card, EmptyState, ErrorState, H2, ListSkeleton, Row, Screen, Stack, StatusBadge } from '@/components/ui';
+import { Avatar, Badge, Body, BodySm, Button, Card, EmptyState, ErrorState, H2, ListSkeleton, Row, Screen, SectionHeader, Stack, StatusBadge, StatusPill } from '@/components/ui';
 import { formatAppDate, useLanguage } from '@/i18n';
 import { colors, spacing } from '@/theme';
 import type { TranslationKey } from '@/i18n';
@@ -80,19 +80,19 @@ function SubscriptionSummaryCard({
           <Badge label={t('subscription.title')} tone={status.enabled ? 'brand' : 'neutral'} />
           <BodySm color={colors.textSecondary}>{monthlyPrice}</BodySm>
         </Row>
-        <Body weight="bold">
+          <Body weight="bold">
           {exhausted
             ? t('worker.dashboard.freeLimitReached')
             : status.enabled
             ? t('worker.dashboard.proAvailable')
-            : t('worker.dashboard.proNotConfigured')}
+            : t('subscription.betaAccessActive')}
         </Body>
         <BodySm color={colors.textSecondary}>
           {exhausted
             ? t('worker.dashboard.subscribeToContinue')
             : access
             ? t('subscription.freeUsageSummary', { used, limit, remaining })
-            : t('worker.dashboard.normalAvailable')}
+            : t('subscription.betaAccessMessage')}
         </BodySm>
         {exhausted ? <BodySm weight="bold">{monthlyPrice}</BodySm> : null}
         <Button title={t('worker.dashboard.viewPro')} variant="outline" size="sm" onPress={onPress} />
@@ -147,9 +147,11 @@ export default function DashboardScreen({ navigation }: Props) {
           <Avatar uri={workerQuery.data?.user?.avatarUrl} name={workerQuery.data?.user?.fullName} size={52} />
           <Stack gap={spacing.xs} style={{ flex: 1 }}>
             <H2>{workerQuery.data?.user?.fullName ?? t('common.workerRole')}</H2>
-            <BodySm color={colors.textSecondary}>
-              {workerQuery.data?.isAvailable ? t('worker.dashboard.available') : t('worker.dashboard.unavailable')}
-            </BodySm>
+            <StatusPill
+              label={workerQuery.data?.isAvailable ? t('worker.dashboard.available') : t('worker.dashboard.unavailable')}
+              tone={workerQuery.data?.isAvailable ? 'success' : 'neutral'}
+              icon={workerQuery.data?.isAvailable ? 'radio-button-on-outline' : 'pause-circle-outline'}
+            />
           </Stack>
         </Row>
         <Row gap={spacing.sm} wrap>
@@ -196,6 +198,13 @@ export default function DashboardScreen({ navigation }: Props) {
           data={visible}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
+          ListHeaderComponent={
+            <SectionHeader
+              title={t('worker.dashboard.nextJobs')}
+              subtitle={t('worker.dashboard.nextJobsHint')}
+            />
+          }
+          ListHeaderComponentStyle={styles.listHeader}
           ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
           renderItem={({ item }) => (
             <Pressable onPress={() => navigation.navigate('ActiveJob', { requestId: item.id })}>
@@ -220,6 +229,7 @@ export default function DashboardScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   header: { padding: spacing.lg, gap: spacing.md },
   list: { padding: spacing.lg, paddingBottom: spacing['4xl'] },
+  listHeader: { marginBottom: spacing.md },
   quickAction: { flexBasis: '31%', flexGrow: 1 },
   proLimitCard: { borderColor: colors.warning, backgroundColor: colors.warningSoft },
 });

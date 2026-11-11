@@ -87,15 +87,15 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  worker           Worker?
-  customerRequests ServiceRequest[]   @relation("CustomerRequests")
-  sentMessages     Message[]          @relation("SentMessages")
-  notifications    Notification[]
-  favorites        Favorite[]
-  reviewsGiven     Review[]           @relation("ReviewsGiven")
-  reviewsReceived  Review[]           @relation("ReviewsReceived")
+  worker            Worker?
+  customerRequests  ServiceRequest[]   @relation("CustomerRequests")
+  sentMessages      Message[]          @relation("SentMessages")
+  notifications     Notification[]
+  favorites         Favorite[]
+  reviewsGiven      Review[]           @relation("ReviewsGiven")
+  reviewsReceived   Review[]           @relation("ReviewsReceived")
   sentOfferMessages OfferMessage[]     @relation("OfferMessagesSent")
-  subscriptions    UserSubscription[]
+  subscriptions     UserSubscription[]
 
   @@map("users")
 }
@@ -103,25 +103,25 @@ model User {
 // ─── Workers ──────────────────────────────────────────────────────────────────
 
 model Worker {
-  id            String    @id @default(uuid())
-  userId        String    @unique
-  bio           String?
-  yearsExp      Int       @default(0)
-  hourlyRate    Decimal?  @db.Decimal(10, 2)
-  fixedPrice    Decimal?  @db.Decimal(10, 2)
-  isAvailable   Boolean   @default(true)
-  ratingAvg     Float     @default(0)
-  totalReviews  Int       @default(0)
-  totalJobs     Int       @default(0)
-  workingRadius Int       @default(20)
+  id                      String    @id @default(uuid())
+  userId                  String    @unique
+  bio                     String?
+  yearsExp                Int       @default(0)
+  hourlyRate              Decimal?  @db.Decimal(10, 2)
+  fixedPrice              Decimal?  @db.Decimal(10, 2)
+  isAvailable             Boolean   @default(true)
+  ratingAvg               Float     @default(0)
+  totalReviews            Int       @default(0)
+  totalJobs               Int       @default(0)
+  workingRadius           Int       @default(20)
   primaryServiceCity      String?
   additionalServiceCities String[]  @default([])
   serviceRadiusKm         Int?
   baseLatitude            Float?
   baseLongitude           Float?
-  approvedAt    DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  approvedAt              DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   user             User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   categories       WorkerCategory[]
@@ -131,6 +131,7 @@ model Worker {
   acceptanceUsages WorkerAcceptanceUsage[]
   offers           RequestOffer[]
 
+  @@index([primaryServiceCity])
   @@map("workers")
 }
 
@@ -195,6 +196,11 @@ model ServiceRequest {
   @@index([workerId])
   @@index([status])
   @@index([createdAt])
+  @@index([customerId, status, createdAt])
+  @@index([workerId, status, createdAt])
+  @@index([status, categoryId, createdAt])
+  @@index([serviceCity])
+  @@index([serviceCity, status, createdAt])
   @@map("service_requests")
 }
 
@@ -206,6 +212,7 @@ model RequestImage {
 
   request ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
+  @@index([requestId, order])
   @@map("request_images")
 }
 
@@ -219,7 +226,7 @@ model Review {
   rating     Int
   comment    String?
   createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  updatedAt  DateTime @default(now()) @updatedAt
 
   request  ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   reviewer User           @relation("ReviewsGiven", fields: [reviewerId], references: [id])
@@ -295,6 +302,7 @@ model Message {
   sender  User           @relation("SentMessages", fields: [senderId], references: [id])
 
   @@index([requestId])
+  @@index([requestId, createdAt])
   @@map("messages")
 }
 
@@ -313,6 +321,7 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, isRead])
+  @@index([userId, isRead, createdAt])
   @@map("notifications")
 }
 
@@ -352,6 +361,7 @@ model UserSubscription {
   billingIssueDate      DateTime?
   lastEventId           String?
   lastEventType         String?
+  lastEventAt           DateTime?
   createdAt             DateTime                @default(now())
   updatedAt             DateTime                @updatedAt
 
@@ -369,6 +379,7 @@ model SubscriptionWebhookEvent {
   provider        SubscriptionProvider @default(REVENUECAT)
   providerEventId String
   type            String
+  eventTimestamp  DateTime?
   processedAt     DateTime?
   createdAt       DateTime             @default(now())
 
@@ -401,5 +412,6 @@ model WorkerAvailability {
 
   worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
 
+  @@index([workerId, dayOfWeek])
   @@map("worker_availability")
 }

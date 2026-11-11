@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { RequestStatus, UserRole } from '@prisma/client';
 import * as service from './admin.service';
 
 // GET /api/v1/admin/dashboard
@@ -25,8 +26,8 @@ export async function getAnalytics(req: Request, res: Response, next: NextFuncti
 export async function listUsers(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await service.listUsers({
-      role: req.query.role as string | undefined,
-      isActive: req.query.isActive === undefined ? undefined : req.query.isActive === 'true',
+      role: req.query.role as UserRole | undefined,
+      isActive: typeof req.query.isActive === 'boolean' ? req.query.isActive : undefined,
       search: req.query.search as string | undefined,
       page: Number(req.query.page ?? 1),
       limit: Number(req.query.limit ?? 20),
@@ -61,7 +62,7 @@ export async function reinstateUser(req: Request, res: Response, next: NextFunct
 export async function listWorkers(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await service.listWorkers({
-      approved: req.query.approved === undefined ? undefined : req.query.approved === 'true',
+      approved: typeof req.query.approved === 'boolean' ? req.query.approved : undefined,
       page: Number(req.query.page ?? 1),
       limit: Number(req.query.limit ?? 20),
     });
@@ -88,7 +89,7 @@ export async function revokeWorker(req: Request, res: Response, next: NextFuncti
 export async function listRequests(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await service.listRequestsAdmin({
-      status: req.query.status as string | undefined,
+      status: req.query.status as RequestStatus | undefined,
       page: Number(req.query.page ?? 1),
       limit: Number(req.query.limit ?? 20),
     });

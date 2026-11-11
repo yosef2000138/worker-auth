@@ -60,6 +60,14 @@ export default function SubscriptionScreen() {
 
   const status = statusQuery.data;
   const workerAccess = backendQuery.data?.workerAccess;
+  const backendConfigured = backendQuery.data?.configured ?? true;
+  const backendEnabled = backendQuery.data?.enabled ?? true;
+  const betaMode =
+    status?.status === 'NOT_CONFIGURED' ||
+    status?.status === 'UNAVAILABLE' ||
+    status?.configured === false ||
+    !backendConfigured ||
+    !backendEnabled;
   const backendActive = Boolean(backendQuery.data?.hasAccess || workerAccess?.hasActiveSubscription);
   const badge = statusBadge(status, t, backendActive);
   const plannedMonthlyPrice = t('subscription.price.monthly', {
@@ -160,11 +168,13 @@ export default function SubscriptionScreen() {
         <Row justify="space-between" align="flex-start">
           <Stack gap={spacing.sm} style={{ flex: 1 }}>
             <Badge label={badge.label} tone={badge.tone} />
-            <H2>{t('subscription.title')}</H2>
-            <Body>{t('subscription.planDescription')}</Body>
-            <Body weight="bold">{displayPrice}</Body>
+            <H2>{betaMode ? t('subscription.betaAccessActive') : t('subscription.title')}</H2>
+            <Body>{betaMode ? t('subscription.betaNoPayment') : t('subscription.planDescription')}</Body>
+            <Body weight="bold">{betaMode ? t('subscription.betaNoPaymentRequired') : displayPrice}</Body>
             <BodySm color={colors.textSecondary}>
-              {status?.localizedPrice
+              {betaMode
+                ? t('subscription.betaAccessMessage')
+                : status?.localizedPrice
                 ? t('subscription.price.storeLocalized')
                 : t('subscription.price.plannedUnavailable')}
             </BodySm>
@@ -188,6 +198,7 @@ export default function SubscriptionScreen() {
       {verificationState === 'verifying' ? <Banner tone="warning" message={t('subscription.verifyingMessage')} /> : null}
       {verificationState === 'delayed' ? <Banner tone="warning" message={t('subscription.verificationDelayed')} /> : null}
       {backendActive && canAcceptRequest ? <Banner tone="success" message={t('subscription.activeSuccess')} /> : null}
+      {betaMode ? <Banner tone="success" message={t('subscription.betaBanner')} /> : null}
 
       <Card>
         <Stack gap={spacing.md}>
@@ -250,6 +261,7 @@ export default function SubscriptionScreen() {
         </Stack>
       </Card>
 
+      {!betaMode ? (
       <Card>
         <Stack gap={spacing.md}>
           <H3>{t('common.actions')}</H3>
@@ -284,6 +296,16 @@ export default function SubscriptionScreen() {
           ) : null}
         </Stack>
       </Card>
+      ) : (
+        <Card>
+          <Stack gap={spacing.md}>
+            <H3>{t('subscription.betaWhatNowTitle')}</H3>
+            <Benefit text={t('subscription.betaWhatNowOffers')} />
+            <Benefit text={t('subscription.betaWhatNowJobs')} />
+            <Benefit text={t('subscription.betaWhatNowNoCheckout')} />
+          </Stack>
+        </Card>
+      )}
     </ScrollView>
   );
 }

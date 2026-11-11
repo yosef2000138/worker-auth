@@ -93,9 +93,6 @@ export default function WorkerOwnProfileScreen() {
       if ((nextLatitude == null) !== (nextLongitude == null)) {
         throw new Error(t('validation.baseLocationPair'));
       }
-      if (nextRadius != null && (nextLatitude == null || nextLongitude == null)) {
-        throw new Error(t('validation.radiusNeedsBaseLocation'));
-      }
 
       return workerService.updateMe({
         bio: bio.trim() || null,
@@ -221,6 +218,9 @@ export default function WorkerOwnProfileScreen() {
             <Field label={t('profile.primaryServiceCity')} placeholder={t('worker.onboarding.cityPlaceholder')} value={primaryServiceCity} onChangeText={setPrimaryServiceCity} editable={workerEditMode} />
             <Field label={t('profile.additionalServiceCities')} placeholder={t('profile.additionalServiceCitiesPlaceholder')} value={additionalServiceCities} onChangeText={setAdditionalServiceCities} editable={workerEditMode} />
             <Field label={t('profile.serviceRadiusKm')} placeholder="20" value={serviceRadiusKm} onChangeText={setServiceRadiusKm} keyboardType="numeric" editable={workerEditMode} />
+            {serviceRadiusKm.trim() && !(baseLatitude && baseLongitude) ? (
+              <BodySm color={colors.textSecondary}>{t('worker.onboarding.radiusNeedsLocationInfo')}</BodySm>
+            ) : null}
             <Row gap={spacing.md}>
               <Field label={t('profile.baseLatitude')} value={baseLatitude} onChangeText={setBaseLatitude} keyboardType="decimal-pad" editable={workerEditMode} containerStyle={{ flex: 1 }} />
               <Field label={t('profile.baseLongitude')} value={baseLongitude} onChangeText={setBaseLongitude} keyboardType="decimal-pad" editable={workerEditMode} containerStyle={{ flex: 1 }} />

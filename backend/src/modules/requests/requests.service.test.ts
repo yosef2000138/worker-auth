@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Prisma } from '@prisma/client';
 import {
   ACTIVE_DUPLICATE_REQUEST_STATUSES,
   TERMINAL_REQUEST_STATUSES,
@@ -195,8 +196,24 @@ test('assigned worker receives private job details', () => {
   assert.equal(serialized.lng, 34.7818);
 });
 
-test('unselected offer worker does not receive private request details', () => {
-  const request = { ...mockRequest(), worker: null, hasMyOffer: true, myOfferId: 'offer-1', myOfferStatus: 'SUBMITTED' };
+test('unselected offer worker does not receive private request or selected-worker details', () => {
+  const request = {
+    ...mockRequest(),
+    status: 'ACCEPTED',
+    priceAgreed: new Prisma.Decimal(500),
+    review: {
+      id: 'review-1',
+      requestId: 'request-1',
+      rating: 5,
+      comment: 'Private relationship data',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      reviewer: { id: 'customer-user-1', fullName: 'Customer One', avatarUrl: null },
+    },
+    hasMyOffer: false,
+    myOfferId: 'offer-1',
+    myOfferStatus: 'NOT_SELECTED',
+  };
   const serialized = serializeRequestForViewer(request, {
     userId: 'worker-user-2',
     role: 'WORKER',
@@ -206,12 +223,18 @@ test('unselected offer worker does not receive private request details', () => {
     address?: string;
     lat?: number;
     lng?: number;
+    priceAgreed?: unknown;
+    worker?: unknown;
+    review?: unknown;
   };
 
   assert.equal(serialized.customer, undefined);
   assert.equal(serialized.address, 'Tel Aviv');
   assert.equal(serialized.lat, undefined);
   assert.equal(serialized.lng, undefined);
+  assert.equal(serialized.priceAgreed, undefined);
+  assert.equal(serialized.worker, undefined);
+  assert.equal(serialized.review, undefined);
 });
 
 test('offer chat allows only owning customer or the offer worker', () => {

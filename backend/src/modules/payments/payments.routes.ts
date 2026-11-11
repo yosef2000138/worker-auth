@@ -7,7 +7,9 @@ import { validate } from '../../middlewares/validate';
 import {
   createPaymentIntentSchema,
   confirmPaymentSchema,
-  paymentIdParamSchema,
+  paymentHistorySchema,
+  paymentRequestParamSchema,
+  recordCashPaymentSchema,
 } from './payments.schema';
 
 const router = Router();
@@ -23,15 +25,15 @@ router.use(authenticate);
 // Customer creates payment intent
 router.post('/create-intent', checkoutLimiter, authorize('CUSTOMER'), validate(createPaymentIntentSchema), controller.createIntent);
 
-router.post('/confirm', validate(confirmPaymentSchema), controller.confirm);
+router.post('/confirm', checkoutLimiter, authorize('CUSTOMER'), validate(confirmPaymentSchema), controller.confirm);
 
 // Worker records cash payment
-router.post('/cash', authorize('WORKER'), controller.recordCash);
+router.post('/cash', checkoutLimiter, authorize('WORKER'), validate(recordCashPaymentSchema), controller.recordCash);
 
 // Shared: get payment for a specific request
-router.get('/request/:requestId', controller.getByRequest);
+router.get('/request/:requestId', validate(paymentRequestParamSchema), controller.getByRequest);
 
 // Payment history
-router.get('/history', controller.getHistory);
+router.get('/history', authorize('CUSTOMER', 'WORKER'), validate(paymentHistorySchema), controller.getHistory);
 
 export default router;

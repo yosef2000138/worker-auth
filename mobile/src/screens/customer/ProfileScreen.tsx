@@ -44,11 +44,12 @@ export default function ProfileScreen() {
   const [showPwd, setShowPwd] = useState(false);
   const changePwd = useMutation({
     mutationFn: () => userService.changePassword({ currentPassword: curPwd, newPassword: newPwd }),
-    onSuccess: () => {
+    onSuccess: async () => {
       setCurPwd('');
       setNewPwd('');
       setShowPwd(false);
       Alert.alert(t('profile.passwordChanged'), t('profile.passwordChangedBody'));
+      await logout();
     },
   });
 

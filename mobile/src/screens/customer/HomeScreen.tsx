@@ -1,12 +1,13 @@
 import React, { useCallback } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/types';
 import { requestService } from '@/services/requestService';
 import { useAuthStore } from '@/store/authStore';
-import { Body, BodySm, Button, Card, EmptyState, H2, Row, Screen, Stack, StatusBadge } from '@/components/ui';
+import { Body, BodySm, Button, Card, EmptyState, H2, Row, Screen, SectionHeader, Stack, StatusBadge, StatusPill } from '@/components/ui';
 import { colors, spacing } from '@/theme';
 import { formatAppDate, getLocalizedCategoryName, useLanguage } from '@/i18n';
 import { queryKeys } from '@/utils/queryKeys';
@@ -26,6 +27,8 @@ export default function HomeScreen({ navigation }: Props) {
   );
   const { data } = requestsQuery;
   const items = Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
+  const activeCount = items.filter(item => item.status !== 'COMPLETED' && item.status !== 'CANCELLED').length;
+  const completedCount = items.filter(item => item.status === 'COMPLETED').length;
 
   return (
     <Screen padded={false}>
@@ -34,28 +37,51 @@ export default function HomeScreen({ navigation }: Props) {
           <H2>{t('customer.home.title')}</H2>
           <BodySm color={colors.textSecondary}>{t('customer.home.subtitle')}</BodySm>
         </Stack>
+        <Button
+          title={t('customer.home.createRequest')}
+          icon={<Ionicons name="add-circle-outline" size={18} color={colors.textInverse} />}
+          onPress={() => navigation.navigate('CreateRequest')}
+        />
         <Row gap={spacing.sm} wrap>
-          <Button title={t('customer.home.create')} fullWidth={false} style={styles.quickAction} onPress={() => navigation.navigate('CreateRequest')} />
-          <Button title={t('customer.home.browseCategories')} fullWidth={false} variant="outline" style={styles.quickAction} onPress={() => navigation.navigate('Categories')} />
-          <Button title={t('common.map')} fullWidth={false} variant="outline" style={styles.quickAction} onPress={() => navigation.navigate('Map')} />
+          <Card style={styles.summaryCard}>
+            <StatusPill label={t('customer.home.activeRequests')} tone="brand" icon="time-outline" />
+            <Body weight="bold">{activeCount}</Body>
+            <BodySm color={colors.textSecondary}>{t('customer.home.activeHint')}</BodySm>
+          </Card>
+          <Card style={styles.summaryCard}>
+            <StatusPill label={t('customer.home.completedRequests')} tone="success" icon="checkmark-circle-outline" />
+            <Body weight="bold">{completedCount}</Body>
+            <BodySm color={colors.textSecondary}>{t('customer.home.completedHint')}</BodySm>
+          </Card>
         </Row>
-        <Button title={t('nav.notifications')} variant="ghost" onPress={() => navigation.navigate('Notifications')} />
-        <Button title={t('requests.mine.viewAll')} variant="outline" onPress={() => navigation.navigate('MyRequests')} />
+        <Row gap={spacing.sm} wrap>
+          <Button title={t('requests.mine.viewAll')} fullWidth={false} variant="outline" style={styles.quickAction} onPress={() => navigation.navigate('MyRequests')} />
+          <Button title={t('nav.notifications')} fullWidth={false} variant="outline" style={styles.quickAction} onPress={() => navigation.navigate('Notifications')} />
+          <Button title={t('support.title')} fullWidth={false} variant="outline" style={styles.quickAction} onPress={() => navigation.navigate('Support')} />
+        </Row>
       </View>
 
       {items.length === 0 ? (
         <EmptyState
           icon="clipboard-outline"
           title={t('customer.home.noRequestsTitle')}
-          message={t('customer.home.noRequestsMessage')}
-          actionLabel={t('customer.home.browseCategories')}
-          onAction={() => navigation.navigate('Categories')}
+          message={t('customer.home.noActiveRequestsMessage')}
+          actionLabel={t('customer.home.createRequest')}
+          onAction={() => navigation.navigate('CreateRequest')}
         />
       ) : (
         <FlatList
           data={items}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
+          ListHeaderComponent={
+            <SectionHeader
+              title={t('customer.home.recentRequests')}
+              subtitle={t('customer.home.recentRequestsHint')}
+              action={<Button title={t('common.all')} variant="ghost" size="sm" fullWidth={false} onPress={() => navigation.navigate('MyRequests')} />}
+            />
+          }
+          ListHeaderComponentStyle={styles.listHeader}
           ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
           renderItem={({ item }) => {
             const canRate = item.status === 'COMPLETED' && Boolean(item.worker) && !item.review && item.canReview !== false;
@@ -92,6 +118,8 @@ export default function HomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   header: { padding: spacing.lg, gap: spacing.md },
   list: { paddingHorizontal: spacing.lg, paddingBottom: spacing['4xl'] },
+  listHeader: { marginBottom: spacing.md },
   quickAction: { flexBasis: '31%', flexGrow: 1 },
   rateButton: { marginTop: spacing.md },
+  summaryCard: { flexBasis: '48%', flexGrow: 1, gap: spacing.sm },
 });

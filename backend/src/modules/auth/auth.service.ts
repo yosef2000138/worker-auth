@@ -1,9 +1,12 @@
 import crypto from 'crypto';
+import { Prisma } from '@prisma/client';
 import { db } from '../../config/database';
 import {
-  deleteRefreshToken,
-  getRefreshToken,
-  storeRefreshToken,
+  consumeOneTimeToken,
+  createSession,
+  revokeSession,
+  rotateRefreshToken,
+  storeOneTimeToken,
 } from '../../config/redis';
 import { comparePassword, hashPassword } from '../../utils/bcrypt';
 import { sendPasswordResetEmail, sendVerificationEmail } from '../../utils/email';
@@ -15,14 +18,17 @@ import {
   verifyRefreshToken,
 } from '../../utils/jwt';
 import { env } from '../../config/env';
+import { disconnectUserSockets } from '../../sockets';
 import { LoginInput, RegisterInput } from './auth.schema';
+import { logger } from '../../utils/logger';
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+type SessionIdentity = Pick<JwtPayload, 'sub' | 'role' | 'email'>;
+const DUMMY_PASSWORD_HASH = '$2a$12$v6Usfi3rLTq19G1XktNNEe0BDTpWOMIN96AYqe1CawegpCQ3SOjgi';
 
-function buildTokens(payload: JwtPayload) {
-  const accessToken = signAccessToken(payload);
-  const refreshToken = signRefreshToken({ sub: payload.sub });
-  return { accessToken, refreshToken };
+function buildTokens(identity: SessionIdentity, sessionId = crypto.randomUUID()) {
+  const accessToken = signAccessToken({ ...identity, sid: sessionId });
+  const refreshToken = signRefreshToken({ sub: identity.sub, sid: sessionId });
+  return { accessToken, refreshToken, sessionId };
 }
 
 function safeUser(user: {
@@ -46,168 +52,153 @@ function safeUser(user: {
 }
 
 function sendVerificationEmailInBackground(email: string, token: string) {
-  sendVerificationEmail(email, token).catch((err) => {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn(`Verification email failed for ${email}: ${message}`);
+  sendVerificationEmail(email, token).catch(() => {
+    logger.warn('email.verification_delivery_failed');
   });
 }
 
-// ─── Register ────────────────────────────────────────────────────────────────
+function sendPasswordResetEmailInBackground(email: string, token: string) {
+  sendPasswordResetEmail(email, token).catch(() => {
+    logger.warn('email.password_reset_delivery_failed');
+  });
+}
+
+function identityFor(user: { id: string; role: JwtPayload['role']; email: string }): SessionIdentity {
+  return { sub: user.id, role: user.role, email: user.email };
+}
+
+async function establishSession(identity: SessionIdentity) {
+  const tokens = buildTokens(identity);
+  await revokeSession(identity.sub);
+  disconnectUserSockets(identity.sub);
+  await createSession(
+    identity.sub,
+    tokens.sessionId,
+    tokens.refreshToken,
+    parseTTLSeconds(env.JWT_REFRESH_EXPIRES_IN),
+  );
+  return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
+}
 
 export async function register(input: RegisterInput) {
-  const existing = await db.user.findUnique({ where: { email: input.email } });
-  if (existing) throw { status: 409, message: 'Email already in use' };
-
   const passwordHash = await hashPassword(input.password);
   const verifyToken = crypto.randomBytes(32).toString('hex');
 
-  const user = await db.user.create({
-    data: {
-      fullName: input.fullName,
-      email: input.email,
-      phone: input.phone,
-      passwordHash,
-      role: input.role,
-      // Store token hash; we'll clear it after verification
-      // In a real app use a separate VerificationToken table
-    },
-  });
+  let user;
+  try {
+    user = await db.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          fullName: input.fullName,
+          email: input.email,
+          phone: input.phone,
+          passwordHash,
+          role: input.role,
+        },
+      });
 
-  // Store email verification token in Redis (24h)
-  await storeRefreshToken(`verify:${user.id}`, verifyToken, 86400);
+      if (input.role === 'WORKER') {
+        await tx.worker.create({ data: { userId: created.id } });
+      }
 
-  // If worker role, create worker profile scaffold
-  if (input.role === 'WORKER') {
-    await db.worker.create({ data: { userId: user.id } });
+      return created;
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      throw { status: 409, code: 'EMAIL_ALREADY_IN_USE', message: 'Email already in use' };
+    }
+    throw error;
   }
 
-  const payload: JwtPayload = { sub: user.id, role: user.role, email: user.email };
-  const { accessToken, refreshToken } = buildTokens(payload);
-
-  await storeRefreshToken(
-    user.id,
-    refreshToken,
-    parseTTLSeconds(env.JWT_REFRESH_EXPIRES_IN),
-  );
-
+  await storeOneTimeToken('email-verification', verifyToken, user.id, 86400);
+  const tokens = await establishSession(identityFor(user));
   sendVerificationEmailInBackground(input.email, verifyToken);
 
-  return { user: safeUser(user), accessToken, refreshToken };
+  return { user: safeUser(user), ...tokens };
 }
-
-// ─── Login ───────────────────────────────────────────────────────────────────
 
 export async function login(input: LoginInput) {
   const user = await db.user.findUnique({ where: { email: input.email } });
-  if (!user) throw { status: 401, message: 'Invalid credentials' };
-  if (!user.isActive) throw { status: 403, message: 'Account suspended' };
+  const valid = await comparePassword(input.password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
+  if (!user || !valid) throw { status: 401, code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' };
+  if (!user.isActive) throw { status: 403, code: 'ACCOUNT_SUSPENDED', message: 'Account suspended' };
 
-  const valid = await comparePassword(input.password, user.passwordHash);
-  if (!valid) throw { status: 401, message: 'Invalid credentials' };
-
-  const payload: JwtPayload = { sub: user.id, role: user.role, email: user.email };
-  const { accessToken, refreshToken } = buildTokens(payload);
-
-  await storeRefreshToken(
-    user.id,
-    refreshToken,
-    parseTTLSeconds(env.JWT_REFRESH_EXPIRES_IN),
-  );
-
-  return { user: safeUser(user), accessToken, refreshToken };
+  const tokens = await establishSession(identityFor(user));
+  return { user: safeUser(user), ...tokens };
 }
-
-// ─── Logout ──────────────────────────────────────────────────────────────────
 
 export async function logout(userId: string) {
-  await deleteRefreshToken(userId);
+  await revokeSession(userId);
+  disconnectUserSockets(userId);
 }
 
-// ─── Refresh ─────────────────────────────────────────────────────────────────
-
 export async function refresh(refreshToken: string) {
-  let payload: Pick<JwtPayload, 'sub'>;
+  let payload;
   try {
     payload = verifyRefreshToken(refreshToken);
   } catch {
-    throw { status: 401, message: 'Invalid refresh token' };
-  }
-
-  const stored = await getRefreshToken(payload.sub);
-  if (!stored || stored !== refreshToken) {
-    throw { status: 401, message: 'Refresh token expired or reused' };
+    throw { status: 401, code: 'INVALID_REFRESH_TOKEN', message: 'Invalid refresh token' };
   }
 
   const user = await db.user.findUnique({ where: { id: payload.sub } });
-  if (!user || !user.isActive) throw { status: 401, message: 'User not found' };
+  if (!user || !user.isActive) {
+    await revokeSession(payload.sub);
+    disconnectUserSockets(payload.sub);
+    throw { status: 401, code: 'SESSION_REVOKED', message: 'Session is no longer active' };
+  }
 
-  const newPayload: JwtPayload = { sub: user.id, role: user.role, email: user.email };
-  const { accessToken, refreshToken: newRefresh } = buildTokens(newPayload);
-
-  // Rotate refresh token
-  await deleteRefreshToken(user.id);
-  await storeRefreshToken(
+  const nextTokens = buildTokens(identityFor(user), payload.sid);
+  const rotated = await rotateRefreshToken(
     user.id,
-    newRefresh,
+    payload.sid,
+    refreshToken,
+    nextTokens.refreshToken,
     parseTTLSeconds(env.JWT_REFRESH_EXPIRES_IN),
   );
 
+  if (!rotated) {
+    await revokeSession(user.id);
+    disconnectUserSockets(user.id);
+    throw { status: 401, code: 'REFRESH_TOKEN_REUSED', message: 'Refresh token expired or reused' };
+  }
+
   return {
     user: safeUser(user),
-    accessToken,
-    refreshToken: newRefresh,
+    accessToken: nextTokens.accessToken,
+    refreshToken: nextTokens.refreshToken,
   };
 }
 
-// ─── Verify Email ─────────────────────────────────────────────────────────────
-
 export async function verifyEmail(token: string) {
-  // Find user whose verification token matches
-  // (Simplified: in production use a VerificationToken table)
-  const users = await db.user.findMany({ where: { isVerified: false } });
-
-  for (const user of users) {
-    const stored = await getRefreshToken(`verify:${user.id}`);
-    if (stored === token) {
-      await db.user.update({ where: { id: user.id }, data: { isVerified: true } });
-      await deleteRefreshToken(`verify:${user.id}`);
-      return { message: 'Email verified successfully' };
-    }
+  const userId = await consumeOneTimeToken('email-verification', token);
+  if (!userId) {
+    throw { status: 400, code: 'INVALID_VERIFICATION_TOKEN', message: 'Invalid or expired verification token' };
   }
 
-  throw { status: 400, message: 'Invalid or expired verification token' };
+  await db.user.update({ where: { id: userId }, data: { isVerified: true } });
+  return { message: 'Email verified successfully' };
 }
-
-// ─── Forgot Password ──────────────────────────────────────────────────────────
 
 export async function forgotPassword(email: string) {
   const user = await db.user.findUnique({ where: { email } });
-  // Always return success to avoid user enumeration
-  if (!user) return { message: 'If that email exists, a reset link has been sent' };
+  const response = { message: 'If that email exists, a reset link has been sent' };
+  if (!user || !user.isActive) return response;
 
   const resetToken = crypto.randomBytes(32).toString('hex');
-  await storeRefreshToken(`reset:${user.id}`, resetToken, 3600); // 1 hour
-
-  await sendPasswordResetEmail(email, resetToken);
-  return { message: 'If that email exists, a reset link has been sent' };
+  await storeOneTimeToken('password-reset', resetToken, user.id, 3600);
+  sendPasswordResetEmailInBackground(email, resetToken);
+  return response;
 }
 
-// ─── Reset Password ───────────────────────────────────────────────────────────
-
 export async function resetPassword(token: string, newPassword: string) {
-  const users = await db.user.findMany();
-
-  for (const user of users) {
-    const stored = await getRefreshToken(`reset:${user.id}`);
-    if (stored === token) {
-      const passwordHash = await hashPassword(newPassword);
-      await db.user.update({ where: { id: user.id }, data: { passwordHash } });
-      await deleteRefreshToken(`reset:${user.id}`);
-      // Invalidate all sessions
-      await deleteRefreshToken(user.id);
-      return { message: 'Password reset successfully. Please log in.' };
-    }
+  const userId = await consumeOneTimeToken('password-reset', token);
+  if (!userId) {
+    throw { status: 400, code: 'INVALID_RESET_TOKEN', message: 'Invalid or expired reset token' };
   }
 
-  throw { status: 400, message: 'Invalid or expired reset token' };
+  const passwordHash = await hashPassword(newPassword);
+  await db.user.update({ where: { id: userId }, data: { passwordHash } });
+  await revokeSession(userId);
+  disconnectUserSockets(userId);
+  return { message: 'Password reset successfully. Please log in.' };
 }
